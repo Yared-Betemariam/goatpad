@@ -52,7 +52,10 @@ impl Style {
 }
 
 fn default_format() -> TextFormat {
-    TextFormat::simple(FontId::new(16.0, FontFamily::Proportional), Color32::LIGHT_GRAY)
+    TextFormat::simple(
+        FontId::new(16.0, FontFamily::Proportional),
+        Color32::LIGHT_GRAY,
+    )
 }
 
 /// Produces a live Markdown layout while preserving the editor's original text.
@@ -90,7 +93,12 @@ pub fn highlight(text: &str) -> LayoutJob {
 }
 
 pub fn plain(text: &str) -> LayoutJob {
-    LayoutJob::simple(text.to_owned(), default_format().font_id, default_format().color, f32::INFINITY)
+    LayoutJob::simple(
+        text.to_owned(),
+        default_format().font_id,
+        default_format().color,
+        f32::INFINITY,
+    )
 }
 
 fn style_for_tag(tag: &Tag<'_>) -> Option<Style> {
@@ -130,13 +138,21 @@ fn layout_with_spans(text: &str, spans: Vec<(Range<usize>, Style)>) -> LayoutJob
     let mut current = styles.first().copied().flatten();
     for (index, _) in text.char_indices().skip(1) {
         if styles[index] != current {
-            job.append(&text[start..index], 0.0, current.map_or_else(default_format, Style::format));
+            job.append(
+                &text[start..index],
+                0.0,
+                current.map_or_else(default_format, Style::format),
+            );
             start = index;
             current = styles[index];
         }
     }
     if !text.is_empty() {
-        job.append(&text[start..], 0.0, current.map_or_else(default_format, Style::format));
+        job.append(
+            &text[start..],
+            0.0,
+            current.map_or_else(default_format, Style::format),
+        );
     }
     job
 }
@@ -148,20 +164,35 @@ mod tests {
     #[test]
     fn highlighting_covers_the_entire_document() {
         let job = highlight("# Heading\n\nA **bold** [link](https://example.com).");
-        assert_eq!(job.text, "# Heading\n\nA **bold** [link](https://example.com).");
+        assert_eq!(
+            job.text,
+            "# Heading\n\nA **bold** [link](https://example.com)."
+        );
         assert_eq!(job.sections.first().unwrap().byte_range.start.0, 0);
-        assert_eq!(job.sections.last().unwrap().byte_range.end.0, job.text.len());
+        assert_eq!(
+            job.sections.last().unwrap().byte_range.end.0,
+            job.text.len()
+        );
     }
 
     #[test]
     fn markdown_constructs_receive_distinct_formats() {
-        let job = highlight("# Heading\n*italic* **bold** `code` [link](https://example.com)\n- item");
-        let formats = job.sections.iter().map(|section| &section.format).collect::<Vec<_>>();
+        let job =
+            highlight("# Heading\n*italic* **bold** `code` [link](https://example.com)\n- item");
+        let formats = job
+            .sections
+            .iter()
+            .map(|section| &section.format)
+            .collect::<Vec<_>>();
 
         assert!(formats.iter().any(|format| format.font_id.size >= 20.0));
         assert!(formats.iter().any(|format| format.italics));
         assert!(formats.iter().any(|format| format.font_id.size == 16.0));
-        assert!(formats.iter().any(|format| format.font_id.family == egui::FontFamily::Monospace));
+        assert!(
+            formats
+                .iter()
+                .any(|format| format.font_id.family == egui::FontFamily::Monospace)
+        );
         assert!(formats.iter().any(|format| format.underline.width > 0.0));
     }
 }

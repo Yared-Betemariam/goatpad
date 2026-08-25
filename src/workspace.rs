@@ -185,18 +185,24 @@ mod tests {
 
     #[test]
     fn changing_kind_renames_the_content_file_and_survives_reload() {
-        let directory = std::env::temp_dir().join(format!("goatpad-workspace-test-{}", uuid::Uuid::new_v4()));
+        let directory =
+            std::env::temp_dir().join(format!("goatpad-workspace-test-{}", uuid::Uuid::new_v4()));
         let paths = AppPaths::for_test(directory.clone()).unwrap();
         let mut workspace = Workspace::load(paths.clone()).unwrap();
         let id = workspace.active_document().id;
         workspace.active_document_mut().content = "Keep this content".to_owned();
         workspace.active_document_mut().dirty = true;
-        workspace.save_document(workspace.active_document()).unwrap();
+        workspace
+            .save_document(workspace.active_document())
+            .unwrap();
 
         workspace.set_document_kind(id, DocKind::Txt).unwrap();
 
         assert!(!workspace.document_path(id, DocKind::Md).exists());
-        assert_eq!(fs::read_to_string(workspace.document_path(id, DocKind::Txt)).unwrap(), "Keep this content");
+        assert_eq!(
+            fs::read_to_string(workspace.document_path(id, DocKind::Txt)).unwrap(),
+            "Keep this content"
+        );
         let reloaded = Workspace::load(paths).unwrap();
         assert_eq!(reloaded.active_document().kind, DocKind::Txt);
         assert_eq!(reloaded.active_document().content, "Keep this content");

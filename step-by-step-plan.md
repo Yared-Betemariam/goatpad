@@ -66,16 +66,16 @@ Work top to bottom. Each phase assumes the one before it is done and tested.
 
 ## Phase 5 — Hotkeys
 
-- [ ] 5.1 Define an `Action` enum: `ToggleBold`, `ToggleItalic`, `ToggleUnderline`, `ToggleBulletList`, `NewTab`, `DeleteTab`, etc.
-- [ ] 5.2 Define a `Keybinding` struct (`egui::Key` + `egui::Modifiers`) with serialization to/from strings like `"Ctrl+B"`
-- [ ] 5.3 Ship a default `HashMap<Action, Keybinding>`, overridable by `settings.json`
-- [ ] 5.4 Each frame, check `ctx.input()` against active bindings and dispatch the matching `Action`
-- [ ] 5.5 Implement formatting-wrap logic: selection gets wrapped in the token pair (`**`/`**`, `*`/`*`, `<u>`/`</u>`); no selection inserts the empty pair with cursor between
-- [ ] 5.6 Implement list-toggle: prefix each selected line with `- ` (strip it if already present)
-- [ ] 5.7 Gate formatting actions to `Kind::Md` tabs only
-- [ ] 5.8 Build the settings panel's keybinding list with a "press new combo" rebind capture mode
-- [ ] 5.9 Persist rebindings to `settings.json` immediately on change
-- [ ] 5.10 Test every hotkey individually, plus rebinding one and confirming it takes effect without a restart
+- [x] 5.1 Define an `Action` enum: `ToggleBold`, `ToggleItalic`, `ToggleUnderline`, `ToggleBulletList`, `NewTab`, `DeleteTab`, etc.
+- [x] 5.2 Define a `Keybinding` struct (`egui::Key` + `egui::Modifiers`) with serialization to/from strings like `"Ctrl+B"`
+- [x] 5.3 Ship a default `HashMap<Action, Keybinding>`, overridable by `settings.json`
+- [x] 5.4 Each frame, check `ctx.input()` against active bindings and dispatch the matching `Action`
+- [x] 5.5 Implement formatting-wrap logic: selection gets wrapped in the token pair (`**`/`**`, `*`/`*`, `<u>`/`</u>`); no selection inserts the empty pair with cursor between
+- [x] 5.6 Implement list-toggle: prefix each selected line with `- ` (strip it if already present)
+- [x] 5.7 Gate formatting actions to `Kind::Md` tabs only
+- [x] 5.8 Build the settings panel's keybinding list with a "press new combo" rebind capture mode
+- [x] 5.9 Persist rebindings to `settings.json` immediately on change
+- [x] 5.10 Test every hotkey individually, plus rebinding one and confirming it takes effect without a restart
 
 ## Phase 6 — Themes
 

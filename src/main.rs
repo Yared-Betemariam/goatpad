@@ -7,15 +7,19 @@ use uuid::Uuid;
 
 mod document;
 mod highlighting;
+mod hotkeys;
 mod paths;
 mod persistence;
 mod session;
+mod settings;
 mod workspace;
 
-use paths::AppPaths;
 use document::DocKind;
+use hotkeys::{Action, Keybinding};
+use paths::AppPaths;
 use persistence::{SaveRequest, start_writer_thread};
 use session::{Session, TabState, WindowGeom};
+use settings::Settings;
 use workspace::Workspace;
 
 struct GoatpadApp {
@@ -30,11 +34,15 @@ struct GoatpadApp {
     dirty_since: Option<Instant>,
     last_session_save: Instant,
     delete_confirmation: Option<Uuid>,
+    settings: Settings,
+    settings_open: bool,
+    rebinding: Option<Action>,
 }
 
 impl GoatpadApp {
     fn new(paths: AppPaths, mut session: Session) -> std::io::Result<Self> {
         let mut workspace = Workspace::load(paths.clone())?;
+        let settings = Settings::load(&paths)?;
         if let Some(active_tab) = session.active_tab {
             workspace.set_active_by_id(active_tab);
         }
@@ -57,6 +65,9 @@ impl GoatpadApp {
             dirty_since: None,
             last_session_save: Instant::now(),
             delete_confirmation: None,
+            settings,
+            settings_open: false,
+            rebinding: None,
         })
     }
 
@@ -181,6 +192,167 @@ impl GoatpadApp {
             });
         }
     }
+
+    fn create_tab(&mut self) {
+        self.capture_active_tab_state();
+        self.flush_active_now();
+        match self.workspace.new_tab() {
+            Ok(()) => {
+                self.cursor_offset = 0;
+                self.scroll_offset = 0.0;
+                self.restore_cursor = true;
+                self.save_session();
+            }
+            Err(error) => eprintln!("failed to create tab: {error}"),
+        }
+    }
+
+    fn editor_id(&self) -> egui::Id {
+        egui::Id::new(("editor", self.workspace.active_document().id))
+    }
+
+    fn dispatch_hotkeys(&mut self, ctx: &egui::Context) {
+        if let Some(action) = self.rebinding {
+            if let Some(binding) =
+                ctx.input(|input| input.events.iter().find_map(hotkeys::keybinding_from_event))
+            {
+                self.settings.keybindings.insert(action, binding);
+                if let Err(error) = self.settings.save(&self.paths) {
+                    eprintln!("failed to save settings: {error}");
+                }
+                self.rebinding = None;
+            }
+            return;
+        }
+        let action = Action::ALL.into_iter().find(|action| {
+            self.settings
+                .keybindings
+                .get(action)
+                .is_some_and(|binding| {
+                    ctx.input_mut(|input| input.consume_key(binding.modifiers, binding.key))
+                })
+        });
+        let Some(action) = action else {
+            return;
+        };
+        match action {
+            Action::NewTab => self.create_tab(),
+            Action::DeleteTab => {
+                self.delete_confirmation = Some(self.workspace.active_document().id)
+            }
+            Action::OpenSettings => self.settings_open = !self.settings_open,
+            action
+                if action.is_formatting()
+                    && self.workspace.active_document().kind == DocKind::Md =>
+            {
+                self.apply_formatting(ctx, action);
+            }
+            _ => {}
+        }
+    }
+
+    fn apply_formatting(&mut self, ctx: &egui::Context, action: Action) {
+        let editor_id = self.editor_id();
+        let range = egui::widgets::text_edit::TextEditState::load(ctx, editor_id)
+            .and_then(|state| state.cursor.char_range())
+            .unwrap_or_else(|| {
+                egui::text::CCursorRange::one(egui::text::CCursor::new(self.cursor_offset))
+            });
+        let (start, end) = if range.primary.index.0 <= range.secondary.index.0 {
+            (range.primary.index.0, range.secondary.index.0)
+        } else {
+            (range.secondary.index.0, range.primary.index.0)
+        };
+        let new_range = if action == Action::ToggleBulletList {
+            toggle_bullet_list(
+                &mut self.workspace.active_document_mut().content,
+                start,
+                end,
+            )
+        } else {
+            let (open, close) = match action {
+                Action::ToggleBold => ("**", "**"),
+                Action::ToggleItalic => ("*", "*"),
+                Action::ToggleUnderline => ("<u>", "</u>"),
+                _ => return,
+            };
+            wrap_selection(
+                &mut self.workspace.active_document_mut().content,
+                start,
+                end,
+                open,
+                close,
+            )
+        };
+        let mut state =
+            egui::widgets::text_edit::TextEditState::load(ctx, editor_id).unwrap_or_default();
+        state.cursor.set_char_range(Some(new_range));
+        state.store(ctx, editor_id);
+        self.cursor_offset = new_range.primary.index.0;
+        self.workspace.active_document_mut().dirty = true;
+        let now = Instant::now();
+        self.last_edit = Some(now);
+        self.dirty_since.get_or_insert(now);
+    }
+}
+
+fn byte_index(text: &str, char_index: usize) -> usize {
+    text.char_indices()
+        .nth(char_index)
+        .map_or(text.len(), |(index, _)| index)
+}
+
+fn wrap_selection(
+    text: &mut String,
+    start: usize,
+    end: usize,
+    open: &str,
+    close: &str,
+) -> egui::text::CCursorRange {
+    let start = start.min(text.chars().count());
+    let end = end.min(text.chars().count());
+    let start_byte = byte_index(text, start);
+    let end_byte = byte_index(text, end);
+    text.insert_str(end_byte, close);
+    text.insert_str(start_byte, open);
+    if start == end {
+        egui::text::CCursorRange::one(egui::text::CCursor::new(start + open.chars().count()))
+    } else {
+        egui::text::CCursorRange::two(
+            egui::text::CCursor::new(start + open.chars().count()),
+            egui::text::CCursor::new(end + open.chars().count()),
+        )
+    }
+}
+
+fn toggle_bullet_list(text: &mut String, start: usize, end: usize) -> egui::text::CCursorRange {
+    let start_byte = byte_index(text, start.min(text.chars().count()));
+    let end_byte = byte_index(text, end.min(text.chars().count()));
+    let line_start = text[..start_byte].rfind('\n').map_or(0, |index| index + 1);
+    let line_end = text[end_byte..]
+        .find('\n')
+        .map_or(text.len(), |index| end_byte + index);
+    let selected = &text[line_start..line_end];
+    let lines: Vec<&str> = selected.split('\n').collect();
+    let remove = lines.iter().all(|line| line.starts_with("- "));
+    let replacement = lines
+        .into_iter()
+        .map(|line| {
+            if remove {
+                line.strip_prefix("- ").unwrap_or(line).to_owned()
+            } else {
+                format!("- {line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let replacement_chars = replacement.chars().count();
+    text.replace_range(line_start..line_end, &replacement);
+    let prefix_chars = text[..line_start].chars().count();
+    egui::text::CCursorRange::two(
+        egui::text::CCursor::new(prefix_chars),
+        egui::text::CCursor::new(prefix_chars + replacement_chars),
+    )
 }
 
 fn cursor_position(content: &str, cursor_offset: usize) -> (usize, usize) {
@@ -201,6 +373,7 @@ impl eframe::App for GoatpadApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.update_window_geometry(&ctx);
+        self.dispatch_hotkeys(&ctx);
         let mut requested_switch = None;
         let mut requested_new_tab = false;
         egui::Panel::top("tab_bar").show(ui, |ui| {
@@ -219,23 +392,16 @@ impl eframe::App for GoatpadApp {
                 if ui.button("+").on_hover_text("New tab").clicked() {
                     requested_new_tab = true;
                 }
+                if ui.button("⚙").on_hover_text("Keyboard shortcuts").clicked() {
+                    self.settings_open = true;
+                }
             });
         });
         if let Some(index) = requested_switch {
             self.switch_to(index);
         }
         if requested_new_tab {
-            self.capture_active_tab_state();
-            self.flush_active_now();
-            match self.workspace.new_tab() {
-                Ok(()) => {
-                    self.cursor_offset = 0;
-                    self.scroll_offset = 0.0;
-                    self.restore_cursor = true;
-                    self.save_session();
-                }
-                Err(error) => eprintln!("failed to create tab: {error}"),
-            }
+            self.create_tab();
         }
 
         let (line, column) = cursor_position(
@@ -262,28 +428,31 @@ impl eframe::App for GoatpadApp {
             });
             if requested_kind != self.workspace.active_document().kind {
                 self.flush_active_now();
-                if let Err(error) = self.workspace.set_document_kind(document_id, requested_kind) {
+                if let Err(error) = self
+                    .workspace
+                    .set_document_kind(document_id, requested_kind)
+                {
                     eprintln!("failed to change document type: {error}");
                 }
             }
             let is_markdown = self.workspace.active_document().kind == DocKind::Md;
-            let mut layouter = move |ui: &egui::Ui,
-                                     buffer: &dyn egui::TextBuffer,
-                                     wrap_width: f32| {
-                let mut job = if is_markdown {
-                    highlighting::highlight(buffer.as_str())
-                } else {
-                    highlighting::plain(buffer.as_str())
+            let editor_id = self.editor_id();
+            let mut layouter =
+                move |ui: &egui::Ui, buffer: &dyn egui::TextBuffer, wrap_width: f32| {
+                    let mut job = if is_markdown {
+                        highlighting::highlight(buffer.as_str())
+                    } else {
+                        highlighting::plain(buffer.as_str())
+                    };
+                    job.wrap.max_width = wrap_width;
+                    ui.fonts_mut(|fonts| fonts.layout_job(job))
                 };
-                job.wrap.max_width = wrap_width;
-                ui.fonts_mut(|fonts| fonts.layout_job(job))
-            };
             let output = egui::ScrollArea::vertical()
                 .id_salt(("editor-scroll", document_id))
                 .vertical_scroll_offset(self.scroll_offset)
                 .show(ui, |ui| {
                     egui::TextEdit::multiline(&mut self.workspace.active_document_mut().content)
-                        .id(ui.make_persistent_id(("editor", document_id)))
+                        .id(editor_id)
                         .desired_width(f32::INFINITY)
                         .layouter(&mut layouter)
                         .show(ui)
@@ -331,6 +500,34 @@ impl eframe::App for GoatpadApp {
                             self.delete_confirmation = None;
                         }
                     });
+                });
+        }
+
+        if self.settings_open {
+            egui::Window::new("Keyboard shortcuts")
+                .open(&mut self.settings_open)
+                .resizable(false)
+                .show(&ctx, |ui| {
+                    ui.label("Click a shortcut, then press its replacement key combination.");
+                    egui::Grid::new("keybinding_grid")
+                        .striped(true)
+                        .show(ui, |ui| {
+                            for action in Action::ALL {
+                                ui.label(action.label());
+                                let text = if self.rebinding == Some(action) {
+                                    "Press new combo…".to_owned()
+                                } else {
+                                    self.settings
+                                        .keybindings
+                                        .get(&action)
+                                        .map_or_else(|| "Unbound".to_owned(), Keybinding::to_string)
+                                };
+                                if ui.button(text).clicked() {
+                                    self.rebinding = Some(action);
+                                }
+                                ui.end_row();
+                            }
+                        });
                 });
         }
 
@@ -382,7 +579,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::cursor_position;
+    use super::{cursor_position, toggle_bullet_list, wrap_selection};
     #[test]
     fn cursor_starts_at_line_one_column_one() {
         assert_eq!(cursor_position("", 0), (1, 1));
@@ -394,5 +591,30 @@ mod tests {
     #[test]
     fn cursor_position_counts_unicode_characters() {
         assert_eq!(cursor_position("café\n🦀", 6), (2, 2));
+    }
+
+    #[test]
+    fn formatting_wraps_a_selection_and_leaves_it_selected() {
+        let mut text = "hello world".to_owned();
+        let range = wrap_selection(&mut text, 6, 11, "**", "**");
+        assert_eq!(text, "hello **world**");
+        assert_eq!(
+            (
+                range.primary.index.0.min(range.secondary.index.0),
+                range.primary.index.0.max(range.secondary.index.0)
+            ),
+            (8, 13)
+        );
+    }
+
+    #[test]
+    fn list_toggle_adds_then_removes_each_selected_line() {
+        let mut text = "one\ntwo".to_owned();
+        let length = text.chars().count();
+        toggle_bullet_list(&mut text, 0, length);
+        assert_eq!(text, "- one\n- two");
+        let length = text.chars().count();
+        toggle_bullet_list(&mut text, 0, length);
+        assert_eq!(text, "one\ntwo");
     }
 }
