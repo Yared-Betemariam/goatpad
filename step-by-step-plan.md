@@ -27,16 +27,16 @@ Work top to bottom. Each phase assumes the one before it is done and tested.
 
 ## Phase 2 — Persistence & autosave
 
-- [ ] 2.1 Add `directories`; write a `paths.rs` resolving `ProjectDirs::from("", "", "Goatpad")`, exposing `documents_dir()` / `themes_dir()` / config paths, creating them on first run
-- [ ] 2.2 Flesh out `Document`: `id: Uuid`, `title: String`, `kind: DocKind`, `content: String`, `dirty: bool`
-- [ ] 2.3 Define the `workspace.json` schema as serde structs (`WorkspaceIndex { version, tabs: Vec<TabEntry> }`)
-- [ ] 2.4 Implement `Workspace::load()` — read `workspace.json`, load each doc's content from `documents/<id>.<ext>`; if missing (first run), create one default "Untitled" tab
-- [ ] 2.5 Implement `Workspace::save_index()` — serialize the index to `workspace.json`
-- [ ] 2.6 Write a shared atomic-write helper (`<path>.tmp` then `fs::rename`) — reuse it everywhere content gets persisted
-- [ ] 2.7 Set up the autosave pipeline: `mpsc::channel::<SaveRequest>()` + a dedicated writer thread blocking on `recv()`
-- [ ] 2.8 In the update loop, detect `dirty`, reset a debounce timer (`last_edit: Instant`); once idle past ~400ms, send a `SaveRequest` and clear `dirty`
-- [ ] 2.9 Add a hard-cap flush (force-save if continuously dirty for >2s) so long typing bursts don't go unsaved indefinitely
-- [ ] 2.10 Force-flush all dirty docs synchronously on window close and on tab switch
+- [x] 2.1 Add `directories`; write a `paths.rs` resolving `ProjectDirs::from("", "", "Goatpad")`, exposing `documents_dir()` / `themes_dir()` / config paths, creating them on first run
+- [x] 2.2 Flesh out `Document`: `id: Uuid`, `title: String`, `kind: DocKind`, `content: String`, `dirty: bool`
+- [x] 2.3 Define the `workspace.json` schema as serde structs (`WorkspaceIndex { version, tabs: Vec<TabEntry> }`)
+- [x] 2.4 Implement `Workspace::load()` — read `workspace.json`, load each doc's content from `documents/<id>.<ext>`; if missing (first run), create one default "Untitled" tab
+- [x] 2.5 Implement `Workspace::save_index()` — serialize the index to `workspace.json`
+- [x] 2.6 Write a shared atomic-write helper (`<path>.tmp` then `fs::rename`) — reuse it everywhere content gets persisted
+- [x] 2.7 Set up the autosave pipeline: `mpsc::channel::<SaveRequest>()` + a dedicated writer thread blocking on `recv()`
+- [x] 2.8 In the update loop, detect `dirty`, reset a debounce timer (`last_edit: Instant`); once idle past ~400ms, send a `SaveRequest` and clear `dirty`
+- [x] 2.9 Add a hard-cap flush (force-save if continuously dirty for >2s) so long typing bursts don't go unsaved indefinitely
+- [x] 2.10 Force-flush all dirty docs synchronously on window close and on tab switch
 - [ ] 2.11 Crash-safety test: force-kill the process mid-typing, relaunch, confirm content matches the last debounce window with no corruption
 
 ## Phase 3 — Multi-tab + session restore
