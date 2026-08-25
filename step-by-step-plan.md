@@ -17,13 +17,13 @@ Work top to bottom. Each phase assumes the one before it is done and tested.
 
 ## Phase 1 — Single-document editor core
 
-- [ ] 1.1 Define a minimal `Document` struct (just `content: String` for now)
-- [ ] 1.2 Render one `egui::TextEdit::multiline` bound to `Document.content`, filling a `CentralPanel`
-- [ ] 1.3 Add a bottom `TopBottomPanel` as a placeholder footer strip
-- [ ] 1.4 Read the `TextEdit` output's cursor range and convert the char offset into line/column by scanning for `\n`
-- [ ] 1.5 Compute character count via `content.chars().count()`
-- [ ] 1.6 Wire line/col/char values into the footer, confirm they update live while typing
-- [ ] 1.7 Manual test: multi-line content, wrapped lines, empty file — confirm counts and cursor tracking stay correct
+- [x] 1.1 Define a minimal `Document` struct (just `content: String` for now)
+- [x] 1.2 Render one `egui::TextEdit::multiline` bound to `Document.content`, filling a `CentralPanel`
+- [x] 1.3 Add a bottom `Panel` as a placeholder footer strip (`TopBottomPanel` was renamed in egui 0.36)
+- [x] 1.4 Read the `TextEdit` output's cursor range and convert the char offset into line/column by scanning for `\n`
+- [x] 1.5 Compute character count via `content.chars().count()`
+- [x] 1.6 Wire line/col/char values into the footer, confirm they update live while typing
+- [x] 1.7 Manual test: multi-line content, wrapped lines, empty file — confirm counts and cursor tracking stay correct
 
 ## Phase 2 — Persistence & autosave
 
