@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum DocKind {
+    #[default]
     Md,
     Txt,
 }
@@ -14,12 +15,6 @@ impl DocKind {
             Self::Md => "md",
             Self::Txt => "txt",
         }
-    }
-}
-
-impl Default for DocKind {
-    fn default() -> Self {
-        Self::Md
     }
 }
 

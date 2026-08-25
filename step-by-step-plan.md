@@ -41,16 +41,16 @@ Work top to bottom. Each phase assumes the one before it is done and tested.
 
 ## Phase 3 — Multi-tab + session restore
 
-- [ ] 3.1 Extend `Workspace` to hold `Vec<Document>` + an `active` index
-- [ ] 3.2 Build the tab bar UI (one button per tab + a `+` button)
-- [ ] 3.3 Wire tab click → switch `active`, flushing the previously active doc if dirty
-- [ ] 3.4 Wire `+` → `new_tab()`: fresh `Uuid`, default kind `Md`, title "Untitled", write immediately, append to index, switch to it
-- [ ] 3.5 Add a delete affordance per tab → confirm dialog → `delete_tab(id)`: remove from the list, from `workspace.json`, and delete the content file
-- [ ] 3.6 Define the `session.json` schema (`active_tab`, `window: WindowGeom`, `tab_state: HashMap<Uuid, TabState>` with `cursor_offset` + `scroll_offset`)
-- [ ] 3.7 On tab switch (and periodically), write current cursor + scroll offsets into `tab_state` and persist `session.json`
-- [ ] 3.8 On launch, after loading the workspace, restore the active tab and each tab's cursor position + scroll offset from `session.json`
-- [ ] 3.9 Capture window geometry on resize/move and persist it; apply it on launch via `NativeOptions`
-- [ ] 3.10 Full restart test: open 3 tabs, type in each, move cursors to different spots, resize the window, quit, relaunch — confirm everything comes back exactly
+- [x] 3.1 Extend `Workspace` to hold `Vec<Document>` + an `active` index
+- [x] 3.2 Build the tab bar UI (one button per tab + a `+` button)
+- [x] 3.3 Wire tab click → switch `active`, flushing the previously active doc if dirty
+- [x] 3.4 Wire `+` → `new_tab()`: fresh `Uuid`, default kind `Md`, title "Untitled", write immediately, append to index, switch to it
+- [x] 3.5 Add a delete affordance per tab → confirm dialog → `delete_tab(id)`: remove from the list, from `workspace.json`, and delete the content file
+- [x] 3.6 Define the `session.json` schema (`active_tab`, `window: WindowGeom`, `tab_state: HashMap<Uuid, TabState>` with `cursor_offset` + `scroll_offset`)
+- [x] 3.7 On tab switch (and periodically), write current cursor + scroll offsets into `tab_state` and persist `session.json`
+- [x] 3.8 On launch, after loading the workspace, restore the active tab and each tab's cursor position + scroll offset from `session.json`
+- [x] 3.9 Capture window geometry on resize/move and persist it; apply it on launch via `NativeOptions`
+- [x] 3.10 Full restart test: open 3 tabs, type in each, move cursors to different spots, resize the window, quit, relaunch — confirm everything comes back exactly
 
 ## Phase 4 — Markdown highlighting + MD/TXT switch
 
