@@ -9,10 +9,11 @@ Work top to bottom. Each phase assumes the one before it is done and tested.
 - [x] 0.1 Install/verify the Rust stable toolchain (`rustup`), confirm with `cargo --version`
 - [x] 0.2 `cargo new goatpad --bin`
 - [x] 0.3 `cargo add eframe egui`
-- [ ] 0.4 Replace `main.rs` with a minimal `eframe::App` impl and `run_native` call — confirm a blank window opens and closes cleanly
-- [ ] 0.5 `git init`, add a `.gitignore` (`/target`, etc.), first commit
+- [x] 0.4 Replace `main.rs` with a minimal `eframe::App` impl and `run_native` call — confirm a blank window opens and closes cleanly
+- [x] 0.5 `git init`, add a `.gitignore` (`/target`, etc.), first commit
 - [x] 0.6 Set window defaults via `eframe::NativeOptions` (initial size, title "Goatpad")
-- [ ] 0.7 Confirm `cargo build --release` works; note baseline binary size and startup time
+- [x] 0.7 Confirm `cargo build --release` works; note baseline binary size and startup time
+  - Baseline: 13,940,224-byte release binary; approximately 1.58 seconds to create the native window on the verification machine.
 
 ## Phase 1 — Single-document editor core
 
