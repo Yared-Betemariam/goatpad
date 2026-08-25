@@ -37,7 +37,7 @@ Work top to bottom. Each phase assumes the one before it is done and tested.
 - [x] 2.8 In the update loop, detect `dirty`, reset a debounce timer (`last_edit: Instant`); once idle past ~400ms, send a `SaveRequest` and clear `dirty`
 - [x] 2.9 Add a hard-cap flush (force-save if continuously dirty for >2s) so long typing bursts don't go unsaved indefinitely
 - [x] 2.10 Force-flush all dirty docs synchronously on window close and on tab switch
-- [ ] 2.11 Crash-safety test: force-kill the process mid-typing, relaunch, confirm content matches the last debounce window with no corruption
+- [x] 2.11 Crash-safety test: force-kill the process mid-typing, relaunch, confirm content matches the last debounce window with no corruption
 
 ## Phase 3 — Multi-tab + session restore
 
