@@ -140,6 +140,29 @@ impl Workspace {
         atomic_write(&self.paths.workspace_path(), &data)
     }
 
+    pub fn set_document_kind(&mut self, id: Uuid, kind: DocKind) -> io::Result<()> {
+        let index = self
+            .documents
+            .iter()
+            .position(|document| document.id == id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "document not found"))?;
+        let old_kind = self.documents[index].kind;
+        if old_kind == kind {
+            return Ok(());
+        }
+
+        let old_path = self.document_path(id, old_kind);
+        let new_path = self.document_path(id, kind);
+        fs::rename(&old_path, &new_path)?;
+        self.documents[index].kind = kind;
+        if let Err(error) = self.save_index() {
+            self.documents[index].kind = old_kind;
+            let _ = fs::rename(&new_path, &old_path);
+            return Err(error);
+        }
+        Ok(())
+    }
+
     pub fn document_path(&self, id: Uuid, kind: DocKind) -> std::path::PathBuf {
         self.paths
             .documents_dir()
@@ -151,5 +174,32 @@ impl Workspace {
             &self.document_path(document.id, document.kind),
             document.content.as_bytes(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Workspace;
+    use crate::{document::DocKind, paths::AppPaths};
+    use std::fs;
+
+    #[test]
+    fn changing_kind_renames_the_content_file_and_survives_reload() {
+        let directory = std::env::temp_dir().join(format!("goatpad-workspace-test-{}", uuid::Uuid::new_v4()));
+        let paths = AppPaths::for_test(directory.clone()).unwrap();
+        let mut workspace = Workspace::load(paths.clone()).unwrap();
+        let id = workspace.active_document().id;
+        workspace.active_document_mut().content = "Keep this content".to_owned();
+        workspace.active_document_mut().dirty = true;
+        workspace.save_document(workspace.active_document()).unwrap();
+
+        workspace.set_document_kind(id, DocKind::Txt).unwrap();
+
+        assert!(!workspace.document_path(id, DocKind::Md).exists());
+        assert_eq!(fs::read_to_string(workspace.document_path(id, DocKind::Txt)).unwrap(), "Keep this content");
+        let reloaded = Workspace::load(paths).unwrap();
+        assert_eq!(reloaded.active_document().kind, DocKind::Txt);
+        assert_eq!(reloaded.active_document().content, "Keep this content");
+        fs::remove_dir_all(directory).unwrap();
     }
 }

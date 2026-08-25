@@ -54,15 +54,15 @@ Work top to bottom. Each phase assumes the one before it is done and tested.
 
 ## Phase 4 — Markdown highlighting + MD/TXT switch
 
-- [ ] 4.1 Add `pulldown-cmark`; write `highlighting::highlight(text: &str) -> egui::text::LayoutJob`
-- [ ] 4.2 Walk `Parser::new_ext(text, Options::all()).into_offset_iter()`, collecting `(Range<usize>, TextStyle)` for headings/emphasis/strong/code/links/list markers
-- [ ] 4.3 Convert the span list into a `LayoutJob` (append `LayoutSection`s with the right `TextFormat`, filling gaps with default formatting)
-- [ ] 4.4 Wire `highlight()` as the `TextEdit`'s `.layouter()` callback, active only when `kind == Md`
-- [ ] 4.5 Add a plain (unstyled) fallback layouter for `Kind::Txt`
+- [x] 4.1 Add `pulldown-cmark`; write `highlighting::highlight(text: &str) -> egui::text::LayoutJob`
+- [x] 4.2 Walk `Parser::new_ext(text, Options::all()).into_offset_iter()`, collecting `(Range<usize>, TextStyle)` for headings/emphasis/strong/code/links/list markers
+- [x] 4.3 Convert the span list into a `LayoutJob` (append `LayoutSection`s with the right `TextFormat`, filling gaps with default formatting)
+- [x] 4.4 Wire `highlight()` as the `TextEdit`'s `.layouter()` callback, active only when `kind == Md`
+- [x] 4.5 Add a plain (unstyled) fallback layouter for `Kind::Txt`
 - [ ] 4.6 Visual QA: headings, bold, italic, code, lists, links each render distinctly; cursor/selection still behave normally inside styled text
-- [ ] 4.7 Add the MD/TXT toggle widget next to the tab title
-- [ ] 4.8 Wire the toggle: update `kind`, rename the file on disk (`.md` ⇄ `.txt`), update `workspace.json`, switch layouter immediately
-- [ ] 4.9 Test toggling mid-session and after a restart — extension change round-trips correctly, content is never touched
+- [x] 4.7 Add the MD/TXT toggle widget next to the tab title
+- [x] 4.8 Wire the toggle: update `kind`, rename the file on disk (`.md` ⇄ `.txt`), update `workspace.json`, switch layouter immediately
+- [x] 4.9 Test toggling mid-session and after a restart — extension change round-trips correctly, content is never touched
 
 ## Phase 5 — Hotkeys
 

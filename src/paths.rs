@@ -41,4 +41,11 @@ impl AppPaths {
         fs::create_dir_all(self.documents_dir())?;
         fs::create_dir_all(self.themes_dir())
     }
+
+    #[cfg(test)]
+    pub fn for_test(data_dir: PathBuf) -> io::Result<Self> {
+        let paths = Self { data_dir };
+        paths.ensure_exists()?;
+        Ok(paths)
+    }
 }

@@ -6,12 +6,14 @@ use std::{
 use uuid::Uuid;
 
 mod document;
+mod highlighting;
 mod paths;
 mod persistence;
 mod session;
 mod workspace;
 
 use paths::AppPaths;
+use document::DocKind;
 use persistence::{SaveRequest, start_writer_thread};
 use session::{Session, TabState, WindowGeom};
 use workspace::Workspace;
@@ -251,6 +253,31 @@ impl eframe::App for GoatpadApp {
 
         egui::CentralPanel::default().show(ui, |ui| {
             let document_id = self.workspace.active_document().id;
+            let mut requested_kind = self.workspace.active_document().kind;
+            ui.horizontal(|ui| {
+                ui.heading(&self.workspace.active_document().title);
+                ui.separator();
+                ui.selectable_value(&mut requested_kind, DocKind::Md, "MD");
+                ui.selectable_value(&mut requested_kind, DocKind::Txt, "TXT");
+            });
+            if requested_kind != self.workspace.active_document().kind {
+                self.flush_active_now();
+                if let Err(error) = self.workspace.set_document_kind(document_id, requested_kind) {
+                    eprintln!("failed to change document type: {error}");
+                }
+            }
+            let is_markdown = self.workspace.active_document().kind == DocKind::Md;
+            let mut layouter = move |ui: &egui::Ui,
+                                     buffer: &dyn egui::TextBuffer,
+                                     wrap_width: f32| {
+                let mut job = if is_markdown {
+                    highlighting::highlight(buffer.as_str())
+                } else {
+                    highlighting::plain(buffer.as_str())
+                };
+                job.wrap.max_width = wrap_width;
+                ui.fonts_mut(|fonts| fonts.layout_job(job))
+            };
             let output = egui::ScrollArea::vertical()
                 .id_salt(("editor-scroll", document_id))
                 .vertical_scroll_offset(self.scroll_offset)
@@ -258,6 +285,7 @@ impl eframe::App for GoatpadApp {
                     egui::TextEdit::multiline(&mut self.workspace.active_document_mut().content)
                         .id(ui.make_persistent_id(("editor", document_id)))
                         .desired_width(f32::INFINITY)
+                        .layouter(&mut layouter)
                         .show(ui)
                 });
             self.scroll_offset = output.state.offset.y;
