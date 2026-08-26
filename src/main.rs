@@ -12,6 +12,7 @@ mod paths;
 mod persistence;
 mod session;
 mod settings;
+mod theme;
 mod workspace;
 
 use document::DocKind;
@@ -20,6 +21,7 @@ use paths::AppPaths;
 use persistence::{SaveRequest, start_writer_thread};
 use session::{Session, TabState, WindowGeom};
 use settings::Settings;
+use theme::{Theme, apply_theme, ensure_default_themes, install_fonts, load_themes, save_theme};
 use workspace::Workspace;
 
 struct GoatpadApp {
@@ -37,12 +39,24 @@ struct GoatpadApp {
     settings: Settings,
     settings_open: bool,
     rebinding: Option<Action>,
+    themes: Vec<Theme>,
+    theme_draft: Theme,
+    new_theme_name: String,
 }
 
 impl GoatpadApp {
-    fn new(paths: AppPaths, mut session: Session) -> std::io::Result<Self> {
+    fn new(paths: AppPaths, mut session: Session, ctx: &egui::Context) -> std::io::Result<Self> {
         let mut workspace = Workspace::load(paths.clone())?;
         let settings = Settings::load(&paths)?;
+        ensure_default_themes(&paths)?;
+        let themes = load_themes(&paths)?;
+        let theme_draft = themes
+            .iter()
+            .find(|theme| theme.name == settings.theme)
+            .cloned()
+            .unwrap_or_else(Theme::default_dark);
+        install_fonts(ctx);
+        apply_theme(ctx, &theme_draft);
         if let Some(active_tab) = session.active_tab {
             workspace.set_active_by_id(active_tab);
         }
@@ -68,7 +82,46 @@ impl GoatpadApp {
             settings,
             settings_open: false,
             rebinding: None,
+            themes,
+            theme_draft,
+            new_theme_name: String::new(),
         })
+    }
+
+    fn select_theme(&mut self, ctx: &egui::Context, theme: Theme) {
+        self.settings.theme = theme.name.clone();
+        self.theme_draft = theme;
+        apply_theme(ctx, &self.theme_draft);
+        if let Err(error) = self.settings.save(&self.paths) {
+            eprintln!("failed to save active theme: {error}");
+        }
+    }
+
+    fn save_new_theme(&mut self, ctx: &egui::Context) {
+        let name = self.new_theme_name.trim();
+        if name.is_empty() {
+            return;
+        }
+        let mut theme = self.theme_draft.clone();
+        theme.name = name.to_owned();
+        match save_theme(&self.paths, &theme) {
+            Ok(()) => {
+                if let Some(existing) = self
+                    .themes
+                    .iter_mut()
+                    .find(|saved| saved.name == theme.name)
+                {
+                    *existing = theme.clone();
+                } else {
+                    self.themes.push(theme.clone());
+                    self.themes
+                        .sort_by(|left, right| left.name.cmp(&right.name));
+                }
+                self.new_theme_name.clear();
+                self.select_theme(ctx, theme);
+            }
+            Err(error) => eprintln!("failed to save theme: {error}"),
+        }
     }
 
     fn queue_active_save(&mut self) {
@@ -392,7 +445,7 @@ impl eframe::App for GoatpadApp {
                 if ui.button("+").on_hover_text("New tab").clicked() {
                     requested_new_tab = true;
                 }
-                if ui.button("⚙").on_hover_text("Keyboard shortcuts").clicked() {
+                if ui.button("⚙").on_hover_text("Settings").clicked() {
                     self.settings_open = true;
                 }
             });
@@ -504,10 +557,74 @@ impl eframe::App for GoatpadApp {
         }
 
         if self.settings_open {
-            egui::Window::new("Keyboard shortcuts")
-                .open(&mut self.settings_open)
-                .resizable(false)
+            let mut settings_open = self.settings_open;
+            egui::Window::new("Settings")
+                .open(&mut settings_open)
+                .resizable(true)
                 .show(&ctx, |ui| {
+                    ui.heading("Theme");
+                    let selected_theme = self.settings.theme.clone();
+                    egui::ComboBox::from_label("Saved theme")
+                        .selected_text(&selected_theme)
+                        .show_ui(ui, |ui| {
+                            for theme in self.themes.clone() {
+                                if ui
+                                    .selectable_label(theme.name == selected_theme, &theme.name)
+                                    .clicked()
+                                {
+                                    self.select_theme(&ctx, theme);
+                                }
+                            }
+                        });
+                    let mut changed = false;
+                    ui.horizontal(|ui| {
+                        ui.label("Primary");
+                        changed |= ui
+                            .color_edit_button_srgba(&mut self.theme_draft.primary.0)
+                            .changed();
+                        ui.label("Secondary");
+                        changed |= ui
+                            .color_edit_button_srgba(&mut self.theme_draft.secondary.0)
+                            .changed();
+                        ui.label("Background");
+                        changed |= ui
+                            .color_edit_button_srgba(&mut self.theme_draft.background.0)
+                            .changed();
+                    });
+                    changed |= egui::ComboBox::from_label("Font")
+                        .selected_text(&self.theme_draft.font_family)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.theme_draft.font_family,
+                                "Sans".to_owned(),
+                                "Sans",
+                            );
+                            ui.selectable_value(
+                                &mut self.theme_draft.font_family,
+                                "Monospace".to_owned(),
+                                "Monospace",
+                            );
+                        })
+                        .response
+                        .changed();
+                    changed |= ui
+                        .add(
+                            egui::Slider::new(&mut self.theme_draft.font_size, 12.0..=24.0)
+                                .text("Font size"),
+                        )
+                        .changed();
+                    if changed {
+                        apply_theme(&ctx, &self.theme_draft);
+                    }
+                    ui.horizontal(|ui| {
+                        ui.label("Save as");
+                        ui.text_edit_singleline(&mut self.new_theme_name);
+                        if ui.button("Save new theme").clicked() {
+                            self.save_new_theme(&ctx);
+                        }
+                    });
+                    ui.separator();
+                    ui.heading("Keyboard shortcuts");
                     ui.label("Click a shortcut, then press its replacement key combination.");
                     egui::Grid::new("keybinding_grid")
                         .striped(true)
@@ -529,6 +646,7 @@ impl eframe::App for GoatpadApp {
                             }
                         });
                 });
+            self.settings_open = settings_open;
         }
 
         let now = Instant::now();
@@ -572,7 +690,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             viewport,
             ..Default::default()
         },
-        Box::new(move |_| Ok(Box::new(GoatpadApp::new(paths, session)?))),
+        Box::new(move |creation_context| {
+            Ok(Box::new(GoatpadApp::new(
+                paths,
+                session,
+                &creation_context.egui_ctx,
+            )?))
+        }),
     )?;
     Ok(())
 }

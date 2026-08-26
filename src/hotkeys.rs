@@ -161,9 +161,23 @@ pub fn keybinding_from_event(event: &egui::Event) -> Option<Keybinding> {
             repeat: false,
             modifiers,
             ..
-        } => Some(Keybinding::new(*key, *modifiers)),
+        } if !is_modifier_key(*key) => Some(Keybinding::new(*key, *modifiers)),
         _ => None,
     }
+}
+
+fn is_modifier_key(key: Key) -> bool {
+    matches!(
+        key,
+        Key::ShiftLeft
+            | Key::ShiftRight
+            | Key::ControlLeft
+            | Key::ControlRight
+            | Key::AltLeft
+            | Key::AltRight
+            | Key::SuperLeft
+            | Key::SuperRight
+    )
 }
 
 fn key_name(key: Key) -> &'static str {
@@ -188,59 +202,34 @@ fn key_name(key: Key) -> &'static str {
 }
 
 fn parse_key(name: &str) -> Option<Key> {
-    match name {
-        "a" => Some(Key::A),
-        "b" => Some(Key::B),
-        "c" => Some(Key::C),
-        "d" => Some(Key::D),
-        "e" => Some(Key::E),
-        "f" => Some(Key::F),
-        "g" => Some(Key::G),
-        "h" => Some(Key::H),
-        "i" => Some(Key::I),
-        "j" => Some(Key::J),
-        "k" => Some(Key::K),
-        "l" => Some(Key::L),
-        "m" => Some(Key::M),
-        "n" => Some(Key::N),
-        "o" => Some(Key::O),
-        "p" => Some(Key::P),
-        "q" => Some(Key::Q),
-        "r" => Some(Key::R),
-        "s" => Some(Key::S),
-        "t" => Some(Key::T),
-        "u" => Some(Key::U),
-        "v" => Some(Key::V),
-        "w" => Some(Key::W),
-        "x" => Some(Key::X),
-        "y" => Some(Key::Y),
-        "z" => Some(Key::Z),
-        "0" => Some(Key::Num0),
-        "1" => Some(Key::Num1),
-        "2" => Some(Key::Num2),
-        "3" => Some(Key::Num3),
-        "4" => Some(Key::Num4),
-        "5" => Some(Key::Num5),
-        "6" => Some(Key::Num6),
-        "7" => Some(Key::Num7),
-        "8" => Some(Key::Num8),
-        "9" => Some(Key::Num9),
-        "," => Some(Key::Comma),
-        "." => Some(Key::Period),
-        "space" => Some(Key::Space),
-        "enter" => Some(Key::Enter),
-        "tab" => Some(Key::Tab),
-        _ => None,
-    }
+    Key::ALL
+        .iter()
+        .copied()
+        .find(|key| key.name().eq_ignore_ascii_case(name) || key.symbol_or_name() == name)
+        .filter(|key| !is_modifier_key(*key))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Keybinding;
+    use super::{Keybinding, keybinding_from_event};
+    use egui::{Event, Key, Modifiers};
 
     #[test]
     fn keybinding_round_trips_through_its_settings_string() {
         let binding: Keybinding = "Ctrl+Shift+8".parse().unwrap();
         assert_eq!(binding.to_string(), "Ctrl+Shift+8");
+    }
+
+    #[test]
+    fn modifier_keys_cannot_become_shortcuts() {
+        let event = Event::Key {
+            key: Key::ControlLeft,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::CTRL,
+        };
+        assert!(keybinding_from_event(&event).is_none());
+        assert!("Ctrl+ControlLeft".parse::<Keybinding>().is_err());
     }
 }

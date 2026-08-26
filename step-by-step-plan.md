@@ -79,15 +79,15 @@ Work top to bottom. Each phase assumes the one before it is done and tested.
 
 ## Phase 6 — Themes
 
-- [ ] 6.1 Define `Theme { name, primary, secondary, background, font_family, font_size }` with hex-color serde support
-- [ ] 6.2 Write `apply_theme(ctx, theme)` to set `egui::Visuals` fields (fills, selection color, widget colors) from the theme
-- [ ] 6.3 Ship 1–2 default themes as `themes/default-dark.json` / `default-light.json`
-- [ ] 6.4 Load the active theme from `settings.json` on launch and apply it once at startup
-- [ ] 6.5 Embed a small curated font set (`include_bytes!` + `FontDefinitions`) — one sans, one monospace
-- [ ] 6.6 Build the theme settings panel: color pickers for primary/secondary/background, a font dropdown, live preview
-- [ ] 6.7 Implement "save as new theme" — writes a new file under `themes/`, adds it to a picker list
-- [ ] 6.8 Implement theme switching: picking a saved theme updates `settings.json` and re-applies immediately
-- [ ] 6.9 Test: create a custom theme, switch away and back, restart, confirm it persists
+- [x] 6.1 Define `Theme { name, primary, secondary, background, font_family, font_size }` with hex-color serde support
+- [x] 6.2 Write `apply_theme(ctx, theme)` to set `egui::Visuals` fields (fills, selection color, widget colors) from the theme
+- [x] 6.3 Ship 1–2 default themes as `themes/default-dark.json` / `default-light.json`
+- [x] 6.4 Load the active theme from `settings.json` on launch and apply it once at startup
+- [x] 6.5 Embed a small curated font set (`include_bytes!` + `FontDefinitions`) — one sans, one monospace
+- [x] 6.6 Build the theme settings panel: color pickers for primary/secondary/background, a font dropdown, live preview
+- [x] 6.7 Implement "save as new theme" — writes a new file under `themes/`, adds it to a picker list
+- [x] 6.8 Implement theme switching: picking a saved theme updates `settings.json` and re-applies immediately
+- [x] 6.9 Test: create a custom theme, switch away and back, restart, confirm it persists
 
 ## Phase 7 — Windows polish & packaging
 

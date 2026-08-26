@@ -126,9 +126,13 @@ fn style_for_end(tag: TagEnd) -> Option<Style> {
 fn layout_with_spans(text: &str, spans: Vec<(Range<usize>, Style)>) -> LayoutJob {
     let mut styles = vec![None; text.len()];
     for (range, style) in spans {
-        for byte in range.start.min(text.len())..range.end.min(text.len()) {
-            if styles[byte].is_none_or(|current: Style| style.priority() >= current.priority()) {
-                styles[byte] = Some(style);
+        for current_style in styles
+            .iter_mut()
+            .take(range.end.min(text.len()))
+            .skip(range.start.min(text.len()))
+        {
+            if current_style.is_none_or(|current: Style| style.priority() >= current.priority()) {
+                *current_style = Some(style);
             }
         }
     }
