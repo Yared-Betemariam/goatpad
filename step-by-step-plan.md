@@ -91,15 +91,15 @@ Work top to bottom. Each phase assumes the one before it is done and tested.
 
 ## Phase 7 — Windows polish & packaging
 
-- [ ] 7.1 Add an app icon (`.ico`), wire via `NativeOptions::icon_data` + a `build.rs`/`winres` step for the exe icon
-- [ ] 7.2 Set the window title to reflect the active tab (e.g. "Notes — Goatpad")
-- [ ] 7.3 Handle true first-launch (no `workspace.json`) by auto-creating one default tab
-- [ ] 7.4 Keyboard-only pass: create/switch/delete tabs and reach settings without touching the mouse
-- [ ] 7.5 Error-handling pass: read-only `documents/`, full disk, missing/corrupted content file — fail loud via an in-app toast rather than losing data silently
+- [x] 7.1 Add an app icon (`.ico`), wire via `NativeOptions::icon_data` + a `build.rs`/`winres` step for the exe icon
+- [x] 7.2 Set the window title to reflect the active tab (e.g. "Notes — Goatpad")
+- [x] 7.3 Handle true first-launch (no `workspace.json`) by auto-creating one default tab
+- [x] 7.4 Keyboard-only pass: create/switch/delete tabs and reach settings without touching the mouse
+- [x] 7.5 Error-handling pass: read-only `documents/`, full disk, missing/corrupted content file — fail loud via an in-app toast rather than losing data silently
 - [ ] 7.6 Measure cold-start time and typing latency with several tabs open; profile if either feels off
-- [ ] 7.7 Package a release build — try `cargo-wix` for an MSI, or ship a portable `.exe` + short README as a first pass
+- [x] 7.7 Package a release build — try `cargo-wix` for an MSI, or ship a portable `.exe` + short README as a first pass
 - [ ] 7.8 Re-run the crash-safety test on the packaged build itself, not just `cargo run`
-- [ ] 7.9 Write a short internal changelog/README of current features and known gaps, to anchor Phase 8 later
+- [x] 7.9 Write a short internal changelog/README of current features and known gaps, to anchor Phase 8 later
 
 ## Phase 8 — Cross-platform (later, once Windows is solid)
 

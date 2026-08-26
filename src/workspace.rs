@@ -30,7 +30,9 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    pub fn load(paths: AppPaths) -> io::Result<Self> {
+    /// Loads all workspace documents. Unreadable content is deliberately not
+    /// overwritten; the caller receives a warning to show in the editor.
+    pub fn load(paths: AppPaths) -> io::Result<(Self, Vec<String>)> {
         if !paths.workspace_path().exists() {
             let workspace = Self {
                 documents: vec![Document::new_untitled()],
@@ -39,7 +41,7 @@ impl Workspace {
             };
             workspace.save_document(&workspace.documents[0])?;
             workspace.save_index()?;
-            return Ok(workspace);
+            return Ok((workspace, Vec::new()));
         }
 
         let index: WorkspaceIndex = serde_json::from_slice(&fs::read(paths.workspace_path())?)
@@ -50,15 +52,25 @@ impl Workspace {
                 "workspace has no documents",
             ));
         }
+        let mut warnings = Vec::new();
         let documents = index
             .tabs
             .into_iter()
             .map(|entry| {
-                let content = fs::read_to_string(paths.documents_dir().join(format!(
-                    "{}.{}",
-                    entry.id,
-                    entry.kind.extension()
-                )))?;
+                let path =
+                    paths
+                        .documents_dir()
+                        .join(format!("{}.{}", entry.id, entry.kind.extension()));
+                let content = match fs::read_to_string(&path) {
+                    Ok(content) => content,
+                    Err(error) => {
+                        warnings.push(format!(
+                            "Could not read '{}'; its file was left untouched: {error}",
+                            entry.title
+                        ));
+                        String::new()
+                    }
+                };
                 Ok(Document {
                     id: entry.id,
                     title: entry.title,
@@ -69,11 +81,14 @@ impl Workspace {
             })
             .collect::<io::Result<Vec<_>>>()?;
 
-        Ok(Self {
-            documents,
-            active: 0,
-            paths,
-        })
+        Ok((
+            Self {
+                documents,
+                active: 0,
+                paths,
+            },
+            warnings,
+        ))
     }
 
     pub fn active_document(&self) -> &Document {
@@ -184,11 +199,32 @@ mod tests {
     use std::fs;
 
     #[test]
+    fn first_launch_creates_a_persisted_untitled_tab() {
+        let directory =
+            std::env::temp_dir().join(format!("goatpad-workspace-test-{}", uuid::Uuid::new_v4()));
+        let paths = AppPaths::for_test(directory.clone()).unwrap();
+
+        let (workspace, warnings) = Workspace::load(paths.clone()).unwrap();
+
+        assert!(warnings.is_empty());
+        assert_eq!(workspace.documents.len(), 1);
+        assert_eq!(workspace.active_document().title, "Untitled");
+        assert!(paths.workspace_path().exists());
+        assert!(
+            workspace
+                .document_path(workspace.active_document().id, DocKind::Md)
+                .exists()
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn changing_kind_renames_the_content_file_and_survives_reload() {
         let directory =
             std::env::temp_dir().join(format!("goatpad-workspace-test-{}", uuid::Uuid::new_v4()));
         let paths = AppPaths::for_test(directory.clone()).unwrap();
-        let mut workspace = Workspace::load(paths.clone()).unwrap();
+        let (mut workspace, warnings) = Workspace::load(paths.clone()).unwrap();
+        assert!(warnings.is_empty());
         let id = workspace.active_document().id;
         workspace.active_document_mut().content = "Keep this content".to_owned();
         workspace.active_document_mut().dirty = true;
@@ -203,9 +239,30 @@ mod tests {
             fs::read_to_string(workspace.document_path(id, DocKind::Txt)).unwrap(),
             "Keep this content"
         );
-        let reloaded = Workspace::load(paths).unwrap();
+        let (reloaded, warnings) = Workspace::load(paths).unwrap();
+        assert!(warnings.is_empty());
         assert_eq!(reloaded.active_document().kind, DocKind::Txt);
         assert_eq!(reloaded.active_document().content, "Keep this content");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn missing_content_file_is_reported_without_recreating_it() {
+        let directory =
+            std::env::temp_dir().join(format!("goatpad-workspace-test-{}", uuid::Uuid::new_v4()));
+        let paths = AppPaths::for_test(directory.clone()).unwrap();
+        let (workspace, warnings) = Workspace::load(paths.clone()).unwrap();
+        assert!(warnings.is_empty());
+        let id = workspace.active_document().id;
+        let path = workspace.document_path(id, DocKind::Md);
+        fs::remove_file(&path).unwrap();
+
+        let (reloaded, warnings) = Workspace::load(paths).unwrap();
+
+        assert_eq!(reloaded.active_document().id, id);
+        assert!(reloaded.active_document().content.is_empty());
+        assert_eq!(warnings.len(), 1);
+        assert!(!path.exists());
         fs::remove_dir_all(directory).unwrap();
     }
 }

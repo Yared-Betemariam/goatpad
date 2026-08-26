@@ -10,17 +10,21 @@ pub enum Action {
     ToggleBulletList,
     NewTab,
     DeleteTab,
+    NextTab,
+    PreviousTab,
     OpenSettings,
 }
 
 impl Action {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 9] = [
         Self::ToggleBold,
         Self::ToggleItalic,
         Self::ToggleUnderline,
         Self::ToggleBulletList,
         Self::NewTab,
         Self::DeleteTab,
+        Self::NextTab,
+        Self::PreviousTab,
         Self::OpenSettings,
     ];
 
@@ -32,6 +36,8 @@ impl Action {
             Self::ToggleBulletList => "Bullet list",
             Self::NewTab => "New tab",
             Self::DeleteTab => "Delete tab",
+            Self::NextTab => "Next tab",
+            Self::PreviousTab => "Previous tab",
             Self::OpenSettings => "Settings",
         }
     }
@@ -144,6 +150,18 @@ pub fn default_bindings() -> HashMap<Action, Keybinding> {
                 },
             ),
         ),
+        (Action::NextTab, Keybinding::new(Key::Tab, Modifiers::CTRL)),
+        (
+            Action::PreviousTab,
+            Keybinding::new(
+                Key::Tab,
+                Modifiers {
+                    ctrl: true,
+                    shift: true,
+                    ..Modifiers::NONE
+                },
+            ),
+        ),
         (
             Action::OpenSettings,
             Keybinding::new(Key::Comma, Modifiers::CTRL),
@@ -211,7 +229,7 @@ fn parse_key(name: &str) -> Option<Key> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Keybinding, keybinding_from_event};
+    use super::{Action, Keybinding, default_bindings, keybinding_from_event};
     use egui::{Event, Key, Modifiers};
 
     #[test]
@@ -231,5 +249,13 @@ mod tests {
         };
         assert!(keybinding_from_event(&event).is_none());
         assert!("Ctrl+ControlLeft".parse::<Keybinding>().is_err());
+    }
+
+    #[test]
+    fn keyboard_tab_navigation_has_default_bindings() {
+        let bindings = default_bindings();
+        assert_eq!(bindings[&Action::NextTab].to_string(), "Ctrl+Tab");
+        assert_eq!(bindings[&Action::PreviousTab].to_string(), "Ctrl+Shift+Tab");
+        assert_eq!(bindings[&Action::OpenSettings].to_string(), "Ctrl+,");
     }
 }

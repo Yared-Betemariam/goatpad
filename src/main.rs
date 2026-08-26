@@ -1,6 +1,6 @@
 use eframe::egui;
 use std::{
-    sync::mpsc::Sender,
+    sync::mpsc::{Receiver, Sender, TryRecvError},
     time::{Duration, Instant},
 };
 use uuid::Uuid;
@@ -18,7 +18,7 @@ mod workspace;
 use document::DocKind;
 use hotkeys::{Action, Keybinding};
 use paths::AppPaths;
-use persistence::{SaveRequest, start_writer_thread};
+use persistence::{SaveRequest, SaveResult, start_writer_thread};
 use session::{Session, TabState, WindowGeom};
 use settings::Settings;
 use theme::{Theme, apply_theme, ensure_default_themes, install_fonts, load_themes, save_theme};
@@ -32,6 +32,7 @@ struct GoatpadApp {
     scroll_offset: f32,
     restore_cursor: bool,
     writer: Sender<SaveRequest>,
+    writer_results: Receiver<SaveResult>,
     last_edit: Option<Instant>,
     dirty_since: Option<Instant>,
     last_session_save: Instant,
@@ -42,11 +43,13 @@ struct GoatpadApp {
     themes: Vec<Theme>,
     theme_draft: Theme,
     new_theme_name: String,
+    toasts: Vec<(String, Instant)>,
+    last_window_title: String,
 }
 
 impl GoatpadApp {
     fn new(paths: AppPaths, mut session: Session, ctx: &egui::Context) -> std::io::Result<Self> {
-        let mut workspace = Workspace::load(paths.clone())?;
+        let (mut workspace, startup_warnings) = Workspace::load(paths.clone())?;
         let settings = Settings::load(&paths)?;
         ensure_default_themes(&paths)?;
         let themes = load_themes(&paths)?;
@@ -67,6 +70,7 @@ impl GoatpadApp {
             .copied()
             .unwrap_or_default();
         session.active_tab = Some(active_id);
+        let (writer, writer_results) = start_writer_thread();
         Ok(Self {
             workspace,
             paths,
@@ -74,7 +78,8 @@ impl GoatpadApp {
             cursor_offset: state.cursor_offset,
             scroll_offset: state.scroll_offset,
             restore_cursor: true,
-            writer: start_writer_thread(),
+            writer,
+            writer_results,
             last_edit: None,
             dirty_since: None,
             last_session_save: Instant::now(),
@@ -85,7 +90,48 @@ impl GoatpadApp {
             themes,
             theme_draft,
             new_theme_name: String::new(),
+            toasts: startup_warnings
+                .into_iter()
+                .map(|message| (message, Instant::now()))
+                .collect(),
+            last_window_title: String::new(),
         })
+    }
+
+    fn report_error(&mut self, message: impl Into<String>) {
+        self.toasts.push((message.into(), Instant::now()));
+    }
+
+    fn poll_writer_results(&mut self) {
+        loop {
+            match self.writer_results.try_recv() {
+                Ok(SaveResult {
+                    id: _,
+                    result: Ok(()),
+                }) => {}
+                Ok(SaveResult {
+                    id,
+                    result: Err(error),
+                }) => {
+                    if let Some(document) =
+                        self.workspace.documents.iter_mut().find(|doc| doc.id == id)
+                    {
+                        document.dirty = true;
+                    }
+                    self.last_edit = Some(Instant::now());
+                    self.report_error(error);
+                }
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+            }
+        }
+    }
+
+    fn update_window_title(&mut self, ctx: &egui::Context) {
+        let title = window_title(&self.workspace.active_document().title);
+        if title != self.last_window_title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.last_window_title = title;
+        }
     }
 
     fn select_theme(&mut self, ctx: &egui::Context, theme: Theme) {
@@ -93,7 +139,7 @@ impl GoatpadApp {
         self.theme_draft = theme;
         apply_theme(ctx, &self.theme_draft);
         if let Err(error) = self.settings.save(&self.paths) {
-            eprintln!("failed to save active theme: {error}");
+            self.report_error(format!("Could not save the active theme: {error}"));
         }
     }
 
@@ -120,7 +166,7 @@ impl GoatpadApp {
                 self.new_theme_name.clear();
                 self.select_theme(ctx, theme);
             }
-            Err(error) => eprintln!("failed to save theme: {error}"),
+            Err(error) => self.report_error(format!("Could not save theme: {error}")),
         }
     }
 
@@ -149,7 +195,7 @@ impl GoatpadApp {
                 .workspace
                 .save_document(&self.workspace.documents[index])
             {
-                eprintln!("failed to save document: {error}");
+                self.report_error(format!("Could not save document: {error}"));
             } else {
                 self.workspace.documents[index].dirty = false;
             }
@@ -163,7 +209,7 @@ impl GoatpadApp {
                     .workspace
                     .save_document(&self.workspace.documents[index])
                 {
-                    eprintln!("failed to save document on exit: {error}");
+                    self.report_error(format!("Could not save document: {error}"));
                 } else {
                     self.workspace.documents[index].dirty = false;
                 }
@@ -207,7 +253,7 @@ impl GoatpadApp {
     fn save_session(&mut self) {
         self.capture_active_tab_state();
         if let Err(error) = self.session.save(&self.paths) {
-            eprintln!("failed to save session: {error}");
+            self.report_error(format!("Could not save session: {error}"));
         } else {
             self.last_session_save = Instant::now();
         }
@@ -231,7 +277,7 @@ impl GoatpadApp {
                 self.save_session();
             }
             Ok(false) => {}
-            Err(error) => eprintln!("failed to delete tab: {error}"),
+            Err(error) => self.report_error(format!("Could not delete tab: {error}")),
         }
     }
 
@@ -256,7 +302,7 @@ impl GoatpadApp {
                 self.restore_cursor = true;
                 self.save_session();
             }
-            Err(error) => eprintln!("failed to create tab: {error}"),
+            Err(error) => self.report_error(format!("Could not create tab: {error}")),
         }
     }
 
@@ -271,7 +317,7 @@ impl GoatpadApp {
             {
                 self.settings.keybindings.insert(action, binding);
                 if let Err(error) = self.settings.save(&self.paths) {
-                    eprintln!("failed to save settings: {error}");
+                    self.report_error(format!("Could not save keyboard shortcuts: {error}"));
                 }
                 self.rebinding = None;
             }
@@ -292,6 +338,18 @@ impl GoatpadApp {
             Action::NewTab => self.create_tab(),
             Action::DeleteTab => {
                 self.delete_confirmation = Some(self.workspace.active_document().id)
+            }
+            Action::NextTab => {
+                let next = (self.workspace.active + 1) % self.workspace.documents.len();
+                self.switch_to(next);
+            }
+            Action::PreviousTab => {
+                let previous = if self.workspace.active == 0 {
+                    self.workspace.documents.len() - 1
+                } else {
+                    self.workspace.active - 1
+                };
+                self.switch_to(previous);
             }
             Action::OpenSettings => self.settings_open = !self.settings_open,
             action
@@ -422,9 +480,43 @@ fn cursor_position(content: &str, cursor_offset: usize) -> (usize, usize) {
     (line, column)
 }
 
+fn window_title(tab_title: &str) -> String {
+    format!("{tab_title} — Goatpad")
+}
+
+fn goatpad_icon() -> egui::IconData {
+    const SIZE: usize = 64;
+    let mut rgba = vec![0_u8; SIZE * SIZE * 4];
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let pixel = (y * SIZE + x) * 4;
+            let inside_page = (7..57).contains(&x) && (6..59).contains(&y);
+            let (red, green, blue) = if inside_page {
+                (107, 193, 123)
+            } else {
+                (28, 52, 40)
+            };
+            rgba[pixel..pixel + 4].copy_from_slice(&[red, green, blue, 255]);
+        }
+    }
+    for y in [20_usize, 32, 44] {
+        for x in 19..if y == 44 { 43 } else { 48 } {
+            let pixel = (y * SIZE + x) * 4;
+            rgba[pixel..pixel + 4].copy_from_slice(&[231, 255, 235, 255]);
+        }
+    }
+    egui::IconData {
+        rgba,
+        width: SIZE as u32,
+        height: SIZE as u32,
+    }
+}
+
 impl eframe::App for GoatpadApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.poll_writer_results();
+        self.update_window_title(&ctx);
         self.update_window_geometry(&ctx);
         self.dispatch_hotkeys(&ctx);
         let mut requested_switch = None;
@@ -485,7 +577,7 @@ impl eframe::App for GoatpadApp {
                     .workspace
                     .set_document_kind(document_id, requested_kind)
                 {
-                    eprintln!("failed to change document type: {error}");
+                    self.report_error(format!("Could not change document type: {error}"));
                 }
             }
             let is_markdown = self.workspace.active_document().kind == DocKind::Md;
@@ -539,17 +631,21 @@ impl eframe::App for GoatpadApp {
         });
 
         if let Some(id) = self.delete_confirmation {
+            let confirm_with_keyboard =
+                ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+            let cancel_with_keyboard =
+                ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
             egui::Window::new("Delete tab?")
                 .collapsible(false)
                 .resizable(false)
                 .show(&ctx, |ui| {
                     ui.label("This permanently removes the tab and its content file.");
                     ui.horizontal(|ui| {
-                        if ui.button("Delete").clicked() {
+                        if confirm_with_keyboard || ui.button("Delete").clicked() {
                             self.delete_confirmation = None;
                             self.delete_tab(id);
                         }
-                        if ui.button("Cancel").clicked() {
+                        if cancel_with_keyboard || ui.button("Cancel").clicked() {
                             self.delete_confirmation = None;
                         }
                     });
@@ -650,6 +746,22 @@ impl eframe::App for GoatpadApp {
         }
 
         let now = Instant::now();
+        self.toasts
+            .retain(|(_, shown_at)| now.duration_since(*shown_at) < Duration::from_secs(8));
+        if !self.toasts.is_empty() {
+            egui::Area::new(egui::Id::new("error_toasts"))
+                .anchor(egui::Align2::RIGHT_BOTTOM, [-12.0, -12.0])
+                .show(&ctx, |ui| {
+                    egui::Frame::popup(ui.style())
+                        .fill(egui::Color32::from_rgb(113, 42, 42))
+                        .show(ui, |ui| {
+                            for (message, _) in &self.toasts {
+                                ui.colored_label(egui::Color32::WHITE, message);
+                            }
+                        });
+                });
+        }
+
         if self
             .last_edit
             .is_some_and(|last| now.duration_since(last) >= Duration::from_millis(400))
@@ -678,7 +790,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let session = Session::load(&paths)?;
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1000.0, 700.0])
-        .with_title("Goatpad");
+        .with_title("Goatpad")
+        .with_icon(goatpad_icon());
     if let Some(window) = session.window {
         viewport = viewport
             .with_inner_size([window.width, window.height])
@@ -703,7 +816,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cursor_position, toggle_bullet_list, wrap_selection};
+    use super::{cursor_position, toggle_bullet_list, window_title, wrap_selection};
     #[test]
     fn cursor_starts_at_line_one_column_one() {
         assert_eq!(cursor_position("", 0), (1, 1));
@@ -740,5 +853,10 @@ mod tests {
         let length = text.chars().count();
         toggle_bullet_list(&mut text, 0, length);
         assert_eq!(text, "one\ntwo");
+    }
+
+    #[test]
+    fn window_title_reflects_the_active_tab() {
+        assert_eq!(window_title("Notes"), "Notes — Goatpad");
     }
 }

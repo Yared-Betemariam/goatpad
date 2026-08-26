@@ -3,7 +3,7 @@ use std::{
     fs, io,
     path::Path,
     path::PathBuf,
-    sync::mpsc::{self, Sender},
+    sync::mpsc::{self, Receiver, Sender},
     thread,
 };
 use uuid::Uuid;
@@ -14,6 +14,12 @@ pub struct SaveRequest {
     pub kind: DocKind,
     pub content: String,
     pub path: PathBuf,
+}
+
+#[derive(Debug)]
+pub struct SaveResult {
+    pub id: Uuid,
+    pub result: Result<(), String>,
 }
 
 pub fn atomic_write(path: &Path, contents: &[u8]) -> io::Result<()> {
@@ -27,23 +33,29 @@ pub fn atomic_write(path: &Path, contents: &[u8]) -> io::Result<()> {
     fs::rename(temp_path, path)
 }
 
-pub fn start_writer_thread() -> Sender<SaveRequest> {
+pub fn start_writer_thread() -> (Sender<SaveRequest>, Receiver<SaveResult>) {
     let (sender, receiver) = mpsc::channel::<SaveRequest>();
+    let (result_sender, result_receiver) = mpsc::channel::<SaveResult>();
     thread::Builder::new()
         .name("goatpad-writer".to_owned())
         .spawn(move || {
             while let Ok(request) = receiver.recv() {
-                if let Err(error) = atomic_write(&request.path, request.content.as_bytes()) {
-                    eprintln!(
-                        "failed to save document {} ({}): {error}",
-                        request.id,
-                        request.kind.extension()
-                    );
-                }
+                let result =
+                    atomic_write(&request.path, request.content.as_bytes()).map_err(|error| {
+                        format!(
+                            "failed to save document {} ({}): {error}",
+                            request.id,
+                            request.kind.extension()
+                        )
+                    });
+                let _ = result_sender.send(SaveResult {
+                    id: request.id,
+                    result,
+                });
             }
         })
         .expect("failed to start Goatpad writer thread");
-    sender
+    (sender, result_receiver)
 }
 
 #[cfg(test)]
