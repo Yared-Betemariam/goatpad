@@ -93,6 +93,7 @@ struct GoatpadApp {
     rebinding: Option<Action>,
     themes: Vec<Theme>,
     theme_draft: Theme,
+    title_bar_color: egui::Color32,
     editing_theme: Option<Theme>,
     editing_theme_is_new: bool,
     theme_delete_confirm: Option<String>,
@@ -162,6 +163,7 @@ impl GoatpadApp {
             settings_tab: SettingsTab::default(),
             rebinding: None,
             themes,
+            title_bar_color: theme_draft.title_bar_color(),
             theme_draft,
             editing_theme: None,
             editing_theme_is_new: false,
@@ -225,10 +227,15 @@ impl GoatpadApp {
     fn select_theme(&mut self, ctx: &egui::Context, theme: Theme) {
         self.settings.theme = theme.name.clone();
         self.theme_draft = theme;
-        apply_theme(ctx, &self.theme_draft);
+        self.apply_theme(ctx, &self.theme_draft.clone());
         if let Err(error) = self.settings.save(&self.paths) {
             self.report_error(format!("Could not save the active theme: {error}"));
         }
+    }
+
+    fn apply_theme(&mut self, ctx: &egui::Context, theme: &Theme) {
+        apply_theme(ctx, theme);
+        self.title_bar_color = theme.title_bar_color();
     }
 
     fn start_create_theme(&mut self) {
@@ -315,7 +322,7 @@ impl GoatpadApp {
                     ))
                     .clicked()
                 {
-                    apply_theme(ctx, &self.theme_draft);
+                    self.apply_theme(ctx, &self.theme_draft.clone());
                     return;
                 }
                 ui.heading(if self.editing_theme_is_new {
@@ -372,7 +379,7 @@ impl GoatpadApp {
                 .changed();
 
             if changed {
-                apply_theme(ctx, &draft);
+                self.apply_theme(ctx, &draft);
             }
 
             ui.add_space(8.0);
@@ -381,7 +388,7 @@ impl GoatpadApp {
                     self.editing_theme = Some(draft);
                     self.save_editing_theme(ctx);
                 } else if ui.button("Cancel").clicked() {
-                    apply_theme(ctx, &self.theme_draft);
+                    self.apply_theme(ctx, &self.theme_draft.clone());
                 } else {
                     self.editing_theme = Some(draft);
                 }
@@ -1217,7 +1224,7 @@ impl eframe::App for GoatpadApp {
             .exact_size(TITLE_BAR_HEIGHT)
             .frame(
                 egui::Frame::new()
-                    .fill(ui.style().visuals.panel_fill)
+                    .fill(self.title_bar_color)
                     .inner_margin(egui::Margin {
                         left: 10,
                         right: 0,
