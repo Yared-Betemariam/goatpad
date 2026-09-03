@@ -57,14 +57,59 @@ impl<'de> Deserialize<'de> for ThemeColor {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Theme {
     pub name: String,
     pub primary: ThemeColor,
     pub secondary: ThemeColor,
     pub background: ThemeColor,
-    pub font_family: String,
+    pub system_font: String,
+    pub content_font: String,
     pub font_size: f32,
+}
+
+impl<'de> Deserialize<'de> for Theme {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct ThemeRaw {
+            name: String,
+            primary: ThemeColor,
+            secondary: ThemeColor,
+            background: ThemeColor,
+            #[serde(default)]
+            system_font: Option<String>,
+            #[serde(default)]
+            content_font: Option<String>,
+            #[serde(default)]
+            font_family: Option<String>,
+            #[serde(default)]
+            font: Option<String>,
+            #[serde(default = "default_font_size")]
+            font_size: f32,
+        }
+
+        fn default_font_size() -> f32 {
+            16.0
+        }
+
+        let raw = ThemeRaw::deserialize(deserializer)?;
+        let fallback_font = raw
+            .font_family
+            .or(raw.font)
+            .unwrap_or_else(|| "Segoe UI".to_owned());
+        let system_font = raw.system_font.unwrap_or_else(|| fallback_font.clone());
+        let content_font = raw.content_font.unwrap_or(fallback_font);
+
+        Ok(Self {
+            name: raw.name,
+            primary: raw.primary,
+            secondary: raw.secondary,
+            background: raw.background,
+            system_font,
+            content_font,
+            font_size: raw.font_size,
+        })
+    }
 }
 
 impl Theme {
@@ -74,7 +119,8 @@ impl Theme {
             primary: ThemeColor::rgb(111, 168, 255),
             secondary: ThemeColor::rgb(132, 205, 150),
             background: ThemeColor::rgb(28, 30, 34),
-            font_family: "Segoe UI".to_owned(),
+            system_font: "Segoe UI".to_owned(),
+            content_font: "Segoe UI".to_owned(),
             font_size: 16.0,
         }
     }
@@ -85,16 +131,37 @@ impl Theme {
             primary: ThemeColor::rgb(50, 100, 190),
             secondary: ThemeColor::rgb(42, 125, 83),
             background: ThemeColor::rgb(248, 249, 251),
-            font_family: "Segoe UI".to_owned(),
+            system_font: "Segoe UI".to_owned(),
+            content_font: "Segoe UI".to_owned(),
             font_size: 16.0,
         }
     }
 
-    pub fn font_family(&self) -> FontFamily {
-        match self.font_family.as_str() {
+    pub fn system_font_family(&self) -> FontFamily {
+        Self::resolve_font_family(&self.system_font)
+    }
+
+    pub fn content_font_family(&self) -> FontFamily {
+        Self::resolve_font_family(&self.content_font)
+    }
+
+    pub fn resolve_font_family(font_name: &str) -> FontFamily {
+        match font_name {
             "Monospace" => FontFamily::Monospace,
             "Sans" => FontFamily::Proportional,
             name => FontFamily::Name(name.into()),
+        }
+    }
+
+    pub fn is_builtin(&self) -> bool {
+        self.name == "default-dark" || self.name == "default-light"
+    }
+
+    pub fn display_name(&self) -> &str {
+        match self.name.as_str() {
+            "default-dark" => "Dark (Default)",
+            "default-light" => "Light (Default)",
+            custom => custom,
         }
     }
 }
@@ -173,7 +240,7 @@ pub fn apply_theme(ctx: &egui::Context, theme: &Theme) {
     ctx.set_visuals(visuals);
     ctx.style_mut_of(egui_theme, |style| {
         for font_id in style.text_styles.values_mut() {
-            font_id.family = theme.font_family();
+            font_id.family = theme.system_font_family();
             font_id.size = theme.font_size;
         }
     });
@@ -210,6 +277,19 @@ pub fn save_theme(paths: &AppPaths, theme: &Theme) -> io::Result<()> {
     atomic_write(&theme_path(paths, &theme.name), &data)
 }
 
+pub fn delete_theme(paths: &AppPaths, name: &str) -> io::Result<bool> {
+    if name == "default-dark" || name == "default-light" {
+        return Ok(false);
+    }
+    let path = theme_path(paths, name);
+    if path.exists() {
+        fs::remove_file(path)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 fn theme_path(paths: &AppPaths, name: &str) -> PathBuf {
     let slug = name
         .chars()
@@ -231,7 +311,7 @@ fn theme_path(paths: &AppPaths, name: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{Theme, ThemeColor, ensure_default_themes, load_themes, save_theme};
+    use super::{Theme, ThemeColor, delete_theme, ensure_default_themes, load_themes, save_theme};
     use crate::paths::AppPaths;
     use std::path::PathBuf;
     use uuid::Uuid;
@@ -247,6 +327,22 @@ mod tests {
     }
 
     #[test]
+    fn legacy_theme_deserialization_migrates_font_family_to_both_fonts() {
+        let legacy_json = r##"{
+            "name": "Legacy Theme",
+            "primary": "#112233",
+            "secondary": "#445566",
+            "background": "#778899",
+            "font_family": "Georgia",
+            "font_size": 18.0
+        }"##;
+        let theme: Theme = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(theme.system_font, "Georgia");
+        assert_eq!(theme.content_font, "Georgia");
+        assert_eq!(theme.font_size, 18.0);
+    }
+
+    #[test]
     fn saved_custom_theme_is_loaded_with_default_presets() {
         let directory = PathBuf::from(std::env::temp_dir())
             .join(format!("goatpad-theme-test-{}", Uuid::new_v4()));
@@ -255,11 +351,25 @@ mod tests {
         let mut custom = Theme::default_dark();
         custom.name = "My writing theme".to_owned();
         custom.primary = ThemeColor::rgb(10, 20, 30);
+        custom.system_font = "Segoe UI".to_owned();
+        custom.content_font = "Georgia".to_owned();
         save_theme(&paths, &custom).unwrap();
 
         let themes = load_themes(&paths).unwrap();
         assert!(themes.iter().any(|theme| theme == &custom));
         assert!(themes.iter().any(|theme| theme.name == "default-dark"));
         assert!(themes.iter().any(|theme| theme.name == "default-light"));
+
+        // Test delete_theme
+        assert!(delete_theme(&paths, "My writing theme").unwrap());
+        let themes_after = load_themes(&paths).unwrap();
+        assert!(
+            !themes_after
+                .iter()
+                .any(|theme| theme.name == "My writing theme")
+        );
+
+        // Default themes cannot be deleted
+        assert!(!delete_theme(&paths, "default-dark").unwrap());
     }
 }

@@ -19,7 +19,7 @@ impl DocKind {
     }
 }
 
-const MAX_AUTOMATIC_TITLE_CHARS: usize = 32;
+pub const AUTO_TITLE_MAX_CHARS: usize = 20;
 const UNTITLED_TITLE: &str = "Untitled";
 
 #[derive(Debug)]
@@ -85,8 +85,13 @@ pub fn automatic_title(content: &str) -> String {
         return UNTITLED_TITLE.to_owned();
     }
 
-    let mut title: String = first_line.chars().take(MAX_AUTOMATIC_TITLE_CHARS).collect();
-    if first_line.chars().count() > MAX_AUTOMATIC_TITLE_CHARS {
+    let char_count = first_line.chars().count();
+    let mut title: String = first_line.chars().take(AUTO_TITLE_MAX_CHARS).collect();
+    let trimmed = title.trim_end();
+    if trimmed.len() != title.len() {
+        title = trimmed.to_owned();
+    }
+    if char_count > AUTO_TITLE_MAX_CHARS {
         title.push('…');
     }
     title
@@ -100,7 +105,7 @@ impl Default for Document {
 
 #[cfg(test)]
 mod tests {
-    use super::{Document, automatic_title};
+    use super::{AUTO_TITLE_MAX_CHARS, Document, automatic_title};
 
     #[test]
     fn automatic_title_uses_the_trimmed_first_line() {
@@ -111,7 +116,19 @@ mod tests {
     #[test]
     fn automatic_title_is_unicode_safe_and_truncated() {
         let content = "🦀".repeat(40);
-        assert_eq!(automatic_title(&content), format!("{}…", "🦀".repeat(32)));
+        assert_eq!(
+            automatic_title(&content),
+            format!("{}…", "🦀".repeat(AUTO_TITLE_MAX_CHARS))
+        );
+    }
+
+    #[test]
+    fn automatic_title_trims_trailing_whitespace_on_truncation() {
+        // "This is a long test line" has 24 chars. First 20 is "This is a long test "
+        assert_eq!(
+            automatic_title("This is a long test line"),
+            "This is a long test…"
+        );
     }
 
     #[test]

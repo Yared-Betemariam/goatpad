@@ -30,7 +30,7 @@ use theme::{
 use workspace::Workspace;
 
 const TITLE_BAR_HEIGHT: f32 = 40.0;
-const MENU_BAR_HEIGHT: f32 = 28.0;
+const ACTION_BAR_HEIGHT: f32 = 30.0;
 const TITLE_BAR_SPACING: f32 = 4.0;
 const TITLE_CONTROL_WIDTH: f32 = 32.0;
 const WINDOW_BUTTON_WIDTH: f32 = 46.0;
@@ -40,6 +40,24 @@ const RESIZE_CORNER_SIZE: f32 = 14.0;
 const APP_ICON_SIZE: usize = 64;
 const APP_ICON_RGBA: &[u8; APP_ICON_SIZE * APP_ICON_SIZE * 4] =
     include_bytes!("../assets/icon.rgba");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum SettingsTab {
+    #[default]
+    Themes,
+    Keyboard,
+}
+
+impl SettingsTab {
+    const ALL: &[Self] = &[Self::Themes, Self::Keyboard];
+
+    fn title(self) -> &'static str {
+        match self {
+            Self::Themes => "Themes",
+            Self::Keyboard => "Keyboard",
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 enum ToastKind {
@@ -71,10 +89,13 @@ struct GoatpadApp {
     tabs_list_search: String,
     settings: Settings,
     settings_open: bool,
+    settings_tab: SettingsTab,
     rebinding: Option<Action>,
     themes: Vec<Theme>,
     theme_draft: Theme,
-    new_theme_name: String,
+    editing_theme: Option<Theme>,
+    editing_theme_is_new: bool,
+    theme_delete_confirm: Option<String>,
     renaming_document: Option<Uuid>,
     rename_buffer: String,
     focus_rename: bool,
@@ -138,10 +159,13 @@ impl GoatpadApp {
             tabs_list_search: String::new(),
             settings,
             settings_open: false,
+            settings_tab: SettingsTab::default(),
             rebinding: None,
             themes,
             theme_draft,
-            new_theme_name: String::new(),
+            editing_theme: None,
+            editing_theme_is_new: false,
+            theme_delete_confirm: None,
             renaming_document: None,
             rename_buffer: String::new(),
             focus_rename: false,
@@ -207,31 +231,255 @@ impl GoatpadApp {
         }
     }
 
-    fn save_new_theme(&mut self, ctx: &egui::Context) {
-        let name = self.new_theme_name.trim();
-        if name.is_empty() {
+    fn start_create_theme(&mut self) {
+        let mut new_theme = self.theme_draft.clone();
+        new_theme.name = "Custom Theme".to_owned();
+        self.editing_theme = Some(new_theme);
+        self.editing_theme_is_new = true;
+    }
+
+    fn duplicate_theme(&mut self, base: &Theme) {
+        let mut clone = base.clone();
+        clone.name = format!("{} Copy", base.name);
+        self.editing_theme = Some(clone);
+        self.editing_theme_is_new = true;
+    }
+
+    fn save_editing_theme(&mut self, ctx: &egui::Context) {
+        let Some(mut theme) = self.editing_theme.take() else {
+            return;
+        };
+        let trimmed_name = theme.name.trim().to_owned();
+        if trimmed_name.is_empty() {
+            self.report_error("Theme name cannot be empty");
+            self.editing_theme = Some(theme);
             return;
         }
-        let mut theme = self.theme_draft.clone();
-        theme.name = name.to_owned();
-        match save_theme(&self.paths, &theme) {
-            Ok(()) => {
-                if let Some(existing) = self
-                    .themes
-                    .iter_mut()
-                    .find(|saved| saved.name == theme.name)
-                {
-                    *existing = theme.clone();
-                } else {
-                    self.themes.push(theme.clone());
-                    self.themes
-                        .sort_by(|left, right| left.name.cmp(&right.name));
-                }
-                self.new_theme_name.clear();
-                self.select_theme(ctx, theme);
-            }
-            Err(error) => self.report_error(format!("Could not save theme: {error}")),
+        theme.name = trimmed_name;
+
+        if let Err(error) = save_theme(&self.paths, &theme) {
+            self.report_error(format!("Could not save theme: {error}"));
+            self.editing_theme = Some(theme);
+            return;
         }
+
+        if let Some(existing) = self.themes.iter_mut().find(|t| t.name == theme.name) {
+            *existing = theme.clone();
+        } else {
+            self.themes.push(theme.clone());
+            self.themes.sort_by(|a, b| a.name.cmp(&b.name));
+        }
+
+        if self.editing_theme_is_new || self.settings.theme == theme.name {
+            self.select_theme(ctx, theme);
+        }
+        self.editing_theme_is_new = false;
+        self.report_success("Theme saved");
+    }
+
+    fn delete_custom_theme(&mut self, ctx: &egui::Context, theme_name: &str) {
+        if theme_name == "default-dark" || theme_name == "default-light" {
+            self.report_error("Built-in themes cannot be deleted");
+            return;
+        }
+        match theme::delete_theme(&self.paths, theme_name) {
+            Ok(true) => {
+                self.themes.retain(|t| t.name != theme_name);
+                self.report_success(format!("Deleted theme \"{theme_name}\""));
+                if self.settings.theme == theme_name {
+                    let fallback = self
+                        .themes
+                        .iter()
+                        .find(|t| t.name == "default-light")
+                        .cloned()
+                        .unwrap_or_else(Theme::default_light);
+                    self.select_theme(ctx, fallback);
+                }
+            }
+            Ok(false) => {
+                self.report_error(format!("Theme \"{theme_name}\" not found"));
+            }
+            Err(error) => {
+                self.report_error(format!("Could not delete theme: {error}"));
+            }
+        }
+    }
+
+    fn render_themes_settings(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        if let Some(mut draft) = self.editing_theme.take() {
+            ui.horizontal(|ui| {
+                if ui.button("← Back to themes").clicked() {
+                    apply_theme(ctx, &self.theme_draft);
+                    return;
+                }
+                ui.heading(if self.editing_theme_is_new {
+                    "New Theme"
+                } else {
+                    "Edit Theme"
+                });
+            });
+            ui.add_space(4.0);
+
+            ui.horizontal(|ui| {
+                ui.label("Name:");
+                ui.add(egui::TextEdit::singleline(&mut draft.name).desired_width(180.0));
+            });
+
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new("Colors").strong());
+            let mut changed = false;
+            ui.horizontal(|ui| {
+                ui.label("Primary");
+                changed |= ui.color_edit_button_srgba(&mut draft.primary.0).changed();
+                ui.label("Secondary");
+                changed |= ui.color_edit_button_srgba(&mut draft.secondary.0).changed();
+                ui.label("Background");
+                changed |= ui
+                    .color_edit_button_srgba(&mut draft.background.0)
+                    .changed();
+            });
+
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new("Typography").strong());
+            egui::ComboBox::from_label("System font")
+                .selected_text(&draft.system_font)
+                .show_ui(ui, |ui| {
+                    for font in FONT_OPTIONS {
+                        changed |= ui
+                            .selectable_value(&mut draft.system_font, (*font).to_owned(), *font)
+                            .changed();
+                    }
+                });
+
+            egui::ComboBox::from_label("Content font")
+                .selected_text(&draft.content_font)
+                .show_ui(ui, |ui| {
+                    for font in FONT_OPTIONS {
+                        changed |= ui
+                            .selectable_value(&mut draft.content_font, (*font).to_owned(), *font)
+                            .changed();
+                    }
+                });
+
+            changed |= ui
+                .add(egui::Slider::new(&mut draft.font_size, 12.0..=24.0).text("Font size"))
+                .changed();
+
+            if changed {
+                apply_theme(ctx, &draft);
+            }
+
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("Save").clicked() {
+                    self.editing_theme = Some(draft);
+                    self.save_editing_theme(ctx);
+                } else if ui.button("Cancel").clicked() {
+                    apply_theme(ctx, &self.theme_draft);
+                } else {
+                    self.editing_theme = Some(draft);
+                }
+            });
+            return;
+        }
+
+        ui.horizontal(|ui| {
+            ui.heading("Available themes");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("+ New Theme").clicked() {
+                    self.start_create_theme();
+                }
+            });
+        });
+
+        if let Some(to_delete) = self.theme_delete_confirm.clone() {
+            ui.group(|ui| {
+                ui.label(format!("Delete custom theme \"{to_delete}\"?"));
+                ui.horizontal(|ui| {
+                    if ui.button("Confirm Delete").clicked() {
+                        self.theme_delete_confirm = None;
+                        self.delete_custom_theme(ctx, &to_delete);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.theme_delete_confirm = None;
+                    }
+                });
+            });
+        }
+
+        egui::ScrollArea::vertical()
+            .max_height(350.0)
+            .show(ui, |ui| {
+                let themes = self.themes.clone();
+                for theme in themes {
+                    let is_active = theme.name == self.settings.theme;
+                    let is_builtin = theme.is_builtin();
+                    ui.horizontal(|ui| {
+                        let badge = if is_active { "● " } else { "  " };
+                        ui.label(badge);
+                        ui.label(egui::RichText::new(theme.display_name()).strong());
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if !is_builtin {
+                                if ui.small_button("🗑").on_hover_text("Delete theme").clicked() {
+                                    self.theme_delete_confirm = Some(theme.name.clone());
+                                }
+                                if ui
+                                    .small_button("Edit")
+                                    .on_hover_text("Edit colors and fonts")
+                                    .clicked()
+                                {
+                                    self.editing_theme = Some(theme.clone());
+                                    self.editing_theme_is_new = false;
+                                }
+                            }
+                            if ui
+                                .small_button("Duplicate")
+                                .on_hover_text("Duplicate as new custom theme")
+                                .clicked()
+                            {
+                                self.duplicate_theme(&theme);
+                            }
+                            if !is_active {
+                                if ui
+                                    .small_button("Apply")
+                                    .on_hover_text("Apply this theme")
+                                    .clicked()
+                                {
+                                    self.select_theme(ctx, theme.clone());
+                                }
+                            } else {
+                                ui.label(egui::RichText::new("Active").weak());
+                            }
+                        });
+                    });
+                    ui.separator();
+                }
+            });
+    }
+
+    fn render_keyboard_settings(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Keyboard shortcuts");
+        ui.label("Click a shortcut, then press its replacement key combination.");
+        egui::Grid::new("keybinding_grid")
+            .striped(true)
+            .show(ui, |ui| {
+                for action in Action::ALL {
+                    ui.label(action.label());
+                    let text = if self.rebinding == Some(action) {
+                        "Press new combo…".to_owned()
+                    } else {
+                        self.settings
+                            .keybindings
+                            .get(&action)
+                            .map_or_else(|| "Unbound".to_owned(), Keybinding::to_string)
+                    };
+                    if ui.button(text).clicked() {
+                        self.rebinding = Some(action);
+                    }
+                    ui.end_row();
+                }
+            });
     }
 
     fn begin_rename(&mut self, id: Uuid) {
@@ -1045,8 +1293,8 @@ impl eframe::App for GoatpadApp {
             self.finish_rename();
         }
 
-        egui::Panel::top("menu_bar")
-            .exact_size(MENU_BAR_HEIGHT)
+        egui::Panel::top("action_bar")
+            .exact_size(ACTION_BAR_HEIGHT)
             .frame(
                 egui::Frame::new()
                     .fill(ui.style().visuals.panel_fill)
@@ -1054,8 +1302,10 @@ impl eframe::App for GoatpadApp {
             )
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.set_height(MENU_BAR_HEIGHT);
+                    ui.set_height(ACTION_BAR_HEIGHT);
                     ui.add_space(8.0);
+
+                    // Region 1: Actions
                     ui.menu_button("File", |ui| {
                         if ui.button("New tab").clicked() {
                             self.create_tab();
@@ -1208,7 +1458,7 @@ impl eframe::App for GoatpadApp {
                                 if ui
                                     .selectable_label(
                                         theme.name == self.settings.theme,
-                                        &theme.name,
+                                        theme.display_name(),
                                     )
                                     .clicked()
                                 {
@@ -1229,6 +1479,148 @@ impl eframe::App for GoatpadApp {
                         if ui.button("Reset zoom").clicked() {
                             self.zoom = 1.0;
                             ui.close();
+                        }
+                    });
+
+                    // Region 2: Markdown options (only rendered when active note is MD)
+                    if active_is_markdown {
+                        ui.separator();
+                        let available_width = ui.available_width();
+                        if available_width < 340.0 {
+                            ui.menu_button("Format", |ui| {
+                                ui.menu_button("Headings", |ui| {
+                                    if ui.button("Heading 1").clicked() {
+                                        self.apply_heading(&ctx, 1);
+                                        ui.close();
+                                    }
+                                    if ui.button("Heading 2").clicked() {
+                                        self.apply_heading(&ctx, 2);
+                                        ui.close();
+                                    }
+                                    if ui.button("Heading 3").clicked() {
+                                        self.apply_heading(&ctx, 3);
+                                        ui.close();
+                                    }
+                                });
+                                ui.menu_button("Lists", |ui| {
+                                    if ui.button("Bulleted list").clicked() {
+                                        self.apply_formatting(&ctx, Action::ToggleBulletList);
+                                        ui.close();
+                                    }
+                                    if ui.button("Numbered list").clicked() {
+                                        self.apply_formatting(&ctx, Action::ToggleNumberedList);
+                                        ui.close();
+                                    }
+                                });
+                                ui.separator();
+                                if ui.button("Bold (Ctrl+B)").clicked() {
+                                    self.apply_formatting(&ctx, Action::ToggleBold);
+                                    ui.close();
+                                }
+                                if ui.button("Italic (Ctrl+I)").clicked() {
+                                    self.apply_formatting(&ctx, Action::ToggleItalic);
+                                    ui.close();
+                                }
+                                if ui.button("Strikethrough (Ctrl+Shift+X)").clicked() {
+                                    self.apply_formatting(&ctx, Action::ToggleStrikethrough);
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui.button("Link… (Ctrl+K)").clicked() {
+                                    self.apply_formatting(&ctx, Action::InsertLink);
+                                    ui.close();
+                                }
+                                if ui.button("Table").clicked() {
+                                    self.apply_table_insert(&ctx);
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui.button("Clear formatting").clicked() {
+                                    self.apply_clear_formatting(&ctx);
+                                    ui.close();
+                                }
+                            });
+                        } else {
+                            ui.menu_button("H1", |ui| {
+                                if ui.button("Heading 1").clicked() {
+                                    self.apply_heading(&ctx, 1);
+                                    ui.close();
+                                }
+                                if ui.button("Heading 2").clicked() {
+                                    self.apply_heading(&ctx, 2);
+                                    ui.close();
+                                }
+                                if ui.button("Heading 3").clicked() {
+                                    self.apply_heading(&ctx, 3);
+                                    ui.close();
+                                }
+                            });
+                            ui.menu_button("≡", |ui| {
+                                if ui.button("Bulleted list").clicked() {
+                                    self.apply_formatting(&ctx, Action::ToggleBulletList);
+                                    ui.close();
+                                }
+                                if ui.button("Numbered list").clicked() {
+                                    self.apply_formatting(&ctx, Action::ToggleNumberedList);
+                                    ui.close();
+                                }
+                            });
+                            ui.separator();
+                            if ui
+                                .button(egui::RichText::new("B").strong())
+                                .on_hover_text("Bold (Ctrl+B)")
+                                .clicked()
+                            {
+                                self.apply_formatting(&ctx, Action::ToggleBold);
+                            }
+                            if ui
+                                .button(egui::RichText::new("I").italics())
+                                .on_hover_text("Italic (Ctrl+I)")
+                                .clicked()
+                            {
+                                self.apply_formatting(&ctx, Action::ToggleItalic);
+                            }
+                            if ui
+                                .button(egui::RichText::new("S").strikethrough())
+                                .on_hover_text("Strikethrough (Ctrl+Shift+X)")
+                                .clicked()
+                            {
+                                self.apply_formatting(&ctx, Action::ToggleStrikethrough);
+                            }
+                            ui.separator();
+                            if ui.button("🔗").on_hover_text("Link (Ctrl+K)").clicked() {
+                                self.apply_formatting(&ctx, Action::InsertLink);
+                            }
+                            if ui.button("▦").on_hover_text("Table").clicked() {
+                                self.apply_table_insert(&ctx);
+                            }
+                            ui.separator();
+                            if ui.button("Aa").on_hover_text("Clear formatting").clicked() {
+                                self.apply_clear_formatting(&ctx);
+                            }
+                        }
+                    }
+
+                    // Region 3: MD/TXT Switcher (right-aligned)
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(8.0);
+                        if let Some(document_id) = self.session.active_tab {
+                            if let Some(document) = self.workspace.document(document_id) {
+                                let mut requested_kind = document.kind;
+                                ui.selectable_value(&mut requested_kind, DocKind::Txt, "TXT");
+                                ui.selectable_value(&mut requested_kind, DocKind::Md, "MD");
+                                if requested_kind != document.kind {
+                                    self.flush_active_now();
+                                    if let Err(error) = self
+                                        .workspace
+                                        .set_document_kind(document_id, requested_kind)
+                                    {
+                                        self.report_error(format!(
+                                            "Could not change document type: {error}"
+                                        ));
+                                    }
+                                }
+                            }
                         }
                     });
                 });
@@ -1371,87 +1763,8 @@ impl eframe::App for GoatpadApp {
                 return;
             }
             let is_markdown = self.workspace.active_document().kind == DocKind::Md;
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                if is_markdown {
-                    ui.menu_button("H1", |ui| {
-                        if ui.button("Heading 1").clicked() {
-                            self.apply_heading(&ctx, 1);
-                            ui.close();
-                        }
-                        if ui.button("Heading 2").clicked() {
-                            self.apply_heading(&ctx, 2);
-                            ui.close();
-                        }
-                        if ui.button("Heading 3").clicked() {
-                            self.apply_heading(&ctx, 3);
-                            ui.close();
-                        }
-                    });
-                    ui.menu_button("≡", |ui| {
-                        if ui.button("Bulleted list").clicked() {
-                            self.apply_formatting(&ctx, Action::ToggleBulletList);
-                            ui.close();
-                        }
-                        if ui.button("Numbered list").clicked() {
-                            self.apply_formatting(&ctx, Action::ToggleNumberedList);
-                            ui.close();
-                        }
-                    });
-                    ui.separator();
-                    if ui
-                        .button(egui::RichText::new("B").strong())
-                        .on_hover_text("Bold (Ctrl+B)")
-                        .clicked()
-                    {
-                        self.apply_formatting(&ctx, Action::ToggleBold);
-                    }
-                    if ui
-                        .button(egui::RichText::new("I").italics())
-                        .on_hover_text("Italic (Ctrl+I)")
-                        .clicked()
-                    {
-                        self.apply_formatting(&ctx, Action::ToggleItalic);
-                    }
-                    if ui
-                        .button(egui::RichText::new("S").strikethrough())
-                        .on_hover_text("Strikethrough (Ctrl+Shift+X)")
-                        .clicked()
-                    {
-                        self.apply_formatting(&ctx, Action::ToggleStrikethrough);
-                    }
-                    ui.separator();
-                    if ui.button("🔗").on_hover_text("Link (Ctrl+K)").clicked() {
-                        self.apply_formatting(&ctx, Action::InsertLink);
-                    }
-                    if ui.button("▦").on_hover_text("Table").clicked() {
-                        self.apply_table_insert(&ctx);
-                    }
-                    ui.separator();
-                    if ui.button("Aa").on_hover_text("Clear formatting").clicked() {
-                        self.apply_clear_formatting(&ctx);
-                    }
-                } else {
-                    ui.label(egui::RichText::new("Plain text note").weak());
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let mut requested_kind = self.workspace.active_document().kind;
-                    ui.selectable_value(&mut requested_kind, DocKind::Txt, "TXT");
-                    ui.selectable_value(&mut requested_kind, DocKind::Md, "MD");
-                    if requested_kind != self.workspace.active_document().kind {
-                        self.flush_active_now();
-                        if let Err(error) = self
-                            .workspace
-                            .set_document_kind(document_id, requested_kind)
-                        {
-                            self.report_error(format!("Could not change document type: {error}"));
-                        }
-                    }
-                });
-            });
-            ui.separator();
             let zoom = self.zoom;
-            let font_family = self.theme_draft.font_family();
+            let font_family = self.theme_draft.content_font_family();
             let text_color = ui.visuals().text_color();
             let editor_id = self.editor_id();
             let mut layouter =
@@ -1532,87 +1845,28 @@ impl eframe::App for GoatpadApp {
             egui::Window::new("Settings")
                 .open(&mut settings_open)
                 .resizable(true)
+                .default_width(480.0)
                 .show(&ctx, |ui| {
-                    ui.heading("Theme");
-                    let selected_theme = self.settings.theme.clone();
-                    egui::ComboBox::from_label("Saved theme")
-                        .selected_text(&selected_theme)
-                        .show_ui(ui, |ui| {
-                            for theme in self.themes.clone() {
-                                if ui
-                                    .selectable_label(theme.name == selected_theme, &theme.name)
-                                    .clicked()
-                                {
-                                    self.select_theme(&ctx, theme);
-                                }
-                            }
-                        });
-                    let mut changed = false;
                     ui.horizontal(|ui| {
-                        ui.label("Primary");
-                        changed |= ui
-                            .color_edit_button_srgba(&mut self.theme_draft.primary.0)
-                            .changed();
-                        ui.label("Secondary");
-                        changed |= ui
-                            .color_edit_button_srgba(&mut self.theme_draft.secondary.0)
-                            .changed();
-                        ui.label("Background");
-                        changed |= ui
-                            .color_edit_button_srgba(&mut self.theme_draft.background.0)
-                            .changed();
-                    });
-                    changed |= egui::ComboBox::from_label("Font")
-                        .selected_text(&self.theme_draft.font_family)
-                        .show_ui(ui, |ui| {
-                            for font in FONT_OPTIONS {
-                                ui.selectable_value(
-                                    &mut self.theme_draft.font_family,
-                                    (*font).to_owned(),
-                                    *font,
-                                );
+                        for tab in SettingsTab::ALL {
+                            if ui
+                                .selectable_label(self.settings_tab == *tab, tab.title())
+                                .clicked()
+                            {
+                                self.settings_tab = *tab;
                             }
-                        })
-                        .response
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::Slider::new(&mut self.theme_draft.font_size, 12.0..=24.0)
-                                .text("Font size"),
-                        )
-                        .changed();
-                    if changed {
-                        apply_theme(&ctx, &self.theme_draft);
-                    }
-                    ui.horizontal(|ui| {
-                        ui.label("Save as");
-                        ui.text_edit_singleline(&mut self.new_theme_name);
-                        if ui.button("Save new theme").clicked() {
-                            self.save_new_theme(&ctx);
                         }
                     });
                     ui.separator();
-                    ui.heading("Keyboard shortcuts");
-                    ui.label("Click a shortcut, then press its replacement key combination.");
-                    egui::Grid::new("keybinding_grid")
-                        .striped(true)
-                        .show(ui, |ui| {
-                            for action in Action::ALL {
-                                ui.label(action.label());
-                                let text = if self.rebinding == Some(action) {
-                                    "Press new combo…".to_owned()
-                                } else {
-                                    self.settings
-                                        .keybindings
-                                        .get(&action)
-                                        .map_or_else(|| "Unbound".to_owned(), Keybinding::to_string)
-                                };
-                                if ui.button(text).clicked() {
-                                    self.rebinding = Some(action);
-                                }
-                                ui.end_row();
-                            }
-                        });
+
+                    match self.settings_tab {
+                        SettingsTab::Themes => {
+                            self.render_themes_settings(ui, &ctx);
+                        }
+                        SettingsTab::Keyboard => {
+                            self.render_keyboard_settings(ui);
+                        }
+                    }
                 });
             self.settings_open = settings_open;
         }

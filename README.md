@@ -4,17 +4,17 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 
 ## Features
 
-- A Notepad-style look throughout: a custom title bar with tabs, a classic File/Edit/View menu bar, and a Markdown formatting toolbar
+- A Notepad-style look throughout: a custom title bar with tabs, a consolidated action bar, and a status bar
 - Markdown and plain-text editing in persistent tabs, switchable per note (`MD`/`TXT`)
-- A Markdown formatting toolbar (shown for Markdown notes) with headings, bulleted/numbered lists, bold, italic, strikethrough, links, tables, and clear formatting
+- A unified action bar combining File/Edit/View menus, contextual Markdown formatting tools (headings, lists, bold, italic, strikethrough, link, table, clear formatting), and the note type switcher
 - A searchable Tabs List for reopening closed notes and explicitly deleting unwanted notes
-- Automatic note titles derived from the first line, with custom titles via double-click on a tab (renamed in place)
+- Automatic note titles derived from the first line (up to 20 characters), with custom titles via double-click on a tab (renamed in place)
 - Import and export of all notes through portable JSON backups
-- Live Markdown highlighting and common formatting actions, available from the toolbar, the Edit menu, or keyboard shortcuts
+- Live Markdown highlighting and common formatting actions, available from the action bar, the Edit menu, or keyboard shortcuts
 - A Notepad-style status bar with cursor position, character count, document type, zoom control, line-ending, and encoding
 - Automatic background saving
 - Workspace and window restoration between launches
-- Custom light and dark themes, including theme-aware editor text and selectable Windows writing fonts
+- Tabbed Settings window with full theme CRUD (create, duplicate, edit, delete), theme-aware editor text, and separate System and Content font selections
 - Configurable keyboard shortcuts
 - Local storage with no account or cloud service required
 
@@ -101,19 +101,32 @@ Close Goatpad before upgrading. Uninstalling or upgrading the application does n
 | Bulleted / Numbered list  | `Ctrl+Shift+8` / `Ctrl+Shift+7` |
 | Insert link               | `Ctrl+K`                        |
 
-Formatting shortcuts only apply to Markdown notes. Shortcuts can be changed from the application settings.
+Formatting shortcuts only apply to Markdown notes. Shortcuts can be changed from the Keyboard tab in application settings.
 
-## The Markdown formatting toolbar
+## The action bar
 
-Markdown notes show a toolbar above the editor, mirroring Notepad's Markdown view: a heading dropdown (H1-H3), a list dropdown (bulleted/numbered), bold, italic, strikethrough, link, table, and clear-formatting buttons. Plain-text notes hide these tools since Markdown syntax does not apply. The `MD`/`TXT` switch at the right of the toolbar (also available under the `View` menu) changes a note's type at any time.
+Goatpad unifies the application menus and formatting tools into a single, height-constant action bar:
+- **Actions**: File, Edit, and View menus on the left.
+- **Markdown options**: A heading dropdown (H1–H3), list dropdown (bulleted/numbered), bold, italic, strikethrough, link, table, and clear-formatting controls in the center. These tools are rendered only when the active note is Markdown (`MD`); for plain-text notes (`TXT`), the region collapses without changing the bar's height. On constrained window widths, tools collapse cleanly into a "Format" overflow menu.
+- **Document switcher**: An immediate `MD`/`TXT` switch at the right edge of the bar (also switchable via the `View` menu).
+
+## Settings & Themes
+
+The tabbed Settings window (`Ctrl+,`) contains two main tabs:
+- **Themes**: View built-in (`Dark` and `Light`) and custom themes. Built-in themes are protected; you can duplicate any theme to create a new custom palette. Custom themes can be renamed, edited, applied, or deleted. Editing options include primary, secondary, and background colors, font sizing, and independent font family selection.
+- **Keyboard**: Rebind any of the application hotkeys by clicking an action and pressing the replacement key combination.
 
 ## Fonts
 
-The Theme section of Settings includes Segoe UI (the standard Windows 11 application font), Georgia, Cambria, Times New Roman, Arial, Consolas, and the built-in Sans and Monospace choices. Font selection is saved with each theme. The document editor intentionally has no focus or active border.
+Each theme stores two independent font settings:
+- **System font**: Applied to application chrome (title bar, tabs, action bar, status bar, and dialogs).
+- **Content font**: Applied strictly to the note editor text area (Markdown and plain text).
+
+Choices include Segoe UI (standard Windows font), Georgia, Cambria, Times New Roman, Arial, Consolas, and the built-in Sans and Monospace options.
 
 ## Note titles
 
-New notes are named `Untitled` until you type on the first line. Goatpad then uses up to the first 32 characters of that line as the note title. Double-click a tab to rename it in place; press `Enter` to confirm or `Escape` to cancel. Clear the custom title to return to automatic naming.
+New notes are named `Untitled` until you type on the first line. Goatpad then uses up to the first 20 characters of that line as the note title. Double-click a tab to rename it in place; press `Enter` to confirm or `Escape` to cancel. Clear the custom title to return to automatic naming.
 
 ## Import and export
 
