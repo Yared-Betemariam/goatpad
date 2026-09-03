@@ -1452,13 +1452,14 @@ impl eframe::App for GoatpadApp {
             ui.separator();
             let zoom = self.zoom;
             let font_family = self.theme_draft.font_family();
+            let text_color = ui.visuals().text_color();
             let editor_id = self.editor_id();
             let mut layouter =
                 move |ui: &egui::Ui, buffer: &dyn egui::TextBuffer, wrap_width: f32| {
                     let mut job = if is_markdown {
-                        highlighting::highlight(buffer.as_str(), zoom, &font_family)
+                        highlighting::highlight(buffer.as_str(), zoom, &font_family, text_color)
                     } else {
-                        highlighting::plain(buffer.as_str(), zoom, &font_family)
+                        highlighting::plain(buffer.as_str(), zoom, &font_family, text_color)
                     };
                     job.wrap.max_width = wrap_width;
                     ui.fonts_mut(|fonts| fonts.layout_job(job))

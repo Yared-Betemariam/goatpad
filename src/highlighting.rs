@@ -27,8 +27,8 @@ impl Style {
         }
     }
 
-    fn format(self, zoom: f32, font_family: &FontFamily) -> TextFormat {
-        let mut format = default_format(zoom, font_family);
+    fn format(self, zoom: f32, font_family: &FontFamily, text_color: Color32) -> TextFormat {
+        let mut format = default_format(zoom, font_family, text_color);
         match self {
             Self::Heading => {
                 format.font_id = FontId::new(20.0 * zoom, font_family.clone());
@@ -51,16 +51,18 @@ impl Style {
     }
 }
 
-fn default_format(zoom: f32, font_family: &FontFamily) -> TextFormat {
-    TextFormat::simple(
-        FontId::new(16.0 * zoom, font_family.clone()),
-        Color32::LIGHT_GRAY,
-    )
+fn default_format(zoom: f32, font_family: &FontFamily, text_color: Color32) -> TextFormat {
+    TextFormat::simple(FontId::new(16.0 * zoom, font_family.clone()), text_color)
 }
 
 /// Produces a live Markdown layout while preserving the editor's original text.
 /// `zoom` scales every font size uniformly, mirroring Notepad's zoom control.
-pub fn highlight(text: &str, zoom: f32, font_family: &FontFamily) -> LayoutJob {
+pub fn highlight(
+    text: &str,
+    zoom: f32,
+    font_family: &FontFamily,
+    text_color: Color32,
+) -> LayoutJob {
     let mut spans = Vec::<(Range<usize>, Style)>::new();
     let mut active = Vec::<Style>::new();
 
@@ -90,11 +92,11 @@ pub fn highlight(text: &str, zoom: f32, font_family: &FontFamily) -> LayoutJob {
         }
     }
 
-    layout_with_spans(text, spans, zoom, font_family)
+    layout_with_spans(text, spans, zoom, font_family, text_color)
 }
 
-pub fn plain(text: &str, zoom: f32, font_family: &FontFamily) -> LayoutJob {
-    let format = default_format(zoom, font_family);
+pub fn plain(text: &str, zoom: f32, font_family: &FontFamily, text_color: Color32) -> LayoutJob {
+    let format = default_format(zoom, font_family, text_color);
     LayoutJob::simple(text.to_owned(), format.font_id, format.color, f32::INFINITY)
 }
 
@@ -125,6 +127,7 @@ fn layout_with_spans(
     spans: Vec<(Range<usize>, Style)>,
     zoom: f32,
     font_family: &FontFamily,
+    text_color: Color32,
 ) -> LayoutJob {
     let mut styles = vec![None; text.len()];
     for (range, style) in spans {
@@ -141,8 +144,8 @@ fn layout_with_spans(
 
     let format_at = |style: Option<Style>| {
         style.map_or_else(
-            || default_format(zoom, font_family),
-            |style| style.format(zoom, font_family),
+            || default_format(zoom, font_family, text_color),
+            |style| style.format(zoom, font_family, text_color),
         )
     };
     let mut job = LayoutJob::default();
@@ -163,8 +166,8 @@ fn layout_with_spans(
 
 #[cfg(test)]
 mod tests {
-    use super::highlight;
-    use egui::FontFamily;
+    use super::{highlight, plain};
+    use egui::{Color32, FontFamily};
 
     #[test]
     fn highlighting_covers_the_entire_document() {
@@ -172,6 +175,7 @@ mod tests {
             "# Heading\n\nA **bold** [link](https://example.com).",
             1.0,
             &FontFamily::Proportional,
+            Color32::DARK_GRAY,
         );
         assert_eq!(
             job.text,
@@ -185,11 +189,24 @@ mod tests {
     }
 
     #[test]
+    fn plain_text_uses_the_supplied_theme_colour() {
+        let job = plain(
+            "Theme-aware text",
+            1.0,
+            &FontFamily::Proportional,
+            Color32::DARK_GRAY,
+        );
+
+        assert_eq!(job.sections[0].format.color, Color32::DARK_GRAY);
+    }
+
+    #[test]
     fn markdown_constructs_receive_distinct_formats() {
         let job = highlight(
             "# Heading\n*italic* **bold** `code` [link](https://example.com)\n- item",
             1.0,
             &FontFamily::Proportional,
+            Color32::DARK_GRAY,
         );
         let formats = job
             .sections
