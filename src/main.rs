@@ -26,6 +26,18 @@ use settings::Settings;
 use theme::{Theme, apply_theme, ensure_default_themes, install_fonts, load_themes, save_theme};
 use workspace::Workspace;
 
+#[derive(Clone, Copy)]
+enum ToastKind {
+    Error,
+    Success,
+}
+
+struct Toast {
+    message: String,
+    shown_at: Instant,
+    kind: ToastKind,
+}
+
 struct GoatpadApp {
     workspace: Workspace,
     paths: AppPaths,
@@ -45,7 +57,11 @@ struct GoatpadApp {
     themes: Vec<Theme>,
     theme_draft: Theme,
     new_theme_name: String,
-    toasts: Vec<(String, Instant)>,
+    renaming_document: Option<Uuid>,
+    rename_buffer: String,
+    focus_rename: bool,
+    workspace_index_dirty: bool,
+    toasts: Vec<Toast>,
     last_window_title: String,
 }
 
@@ -92,16 +108,36 @@ impl GoatpadApp {
             themes,
             theme_draft,
             new_theme_name: String::new(),
+            renaming_document: None,
+            rename_buffer: String::new(),
+            focus_rename: false,
+            workspace_index_dirty: false,
             toasts: startup_warnings
                 .into_iter()
-                .map(|message| (message, Instant::now()))
+                .map(|message| Toast {
+                    message,
+                    shown_at: Instant::now(),
+                    kind: ToastKind::Error,
+                })
                 .collect(),
             last_window_title: String::new(),
         })
     }
 
     fn report_error(&mut self, message: impl Into<String>) {
-        self.toasts.push((message.into(), Instant::now()));
+        self.toasts.push(Toast {
+            message: message.into(),
+            shown_at: Instant::now(),
+            kind: ToastKind::Error,
+        });
+    }
+
+    fn report_success(&mut self, message: impl Into<String>) {
+        self.toasts.push(Toast {
+            message: message.into(),
+            shown_at: Instant::now(),
+            kind: ToastKind::Success,
+        });
     }
 
     fn poll_writer_results(&mut self) {
@@ -172,6 +208,113 @@ impl GoatpadApp {
         }
     }
 
+    fn begin_rename(&mut self, id: Uuid) {
+        if let Some(document) = self
+            .workspace
+            .documents
+            .iter()
+            .find(|document| document.id == id)
+        {
+            self.renaming_document = Some(id);
+            self.rename_buffer = document.title.clone();
+            self.focus_rename = true;
+        }
+    }
+
+    fn finish_rename(&mut self) {
+        let Some(id) = self.renaming_document.take() else {
+            return;
+        };
+        match self.workspace.rename_document(id, &self.rename_buffer) {
+            Ok(()) => self.workspace_index_dirty = false,
+            Err(error) => {
+                self.workspace_index_dirty = true;
+                self.report_error(format!("Could not rename note: {error}"));
+            }
+        }
+        self.rename_buffer.clear();
+        self.focus_rename = false;
+    }
+
+    fn cancel_rename(&mut self) {
+        self.renaming_document = None;
+        self.rename_buffer.clear();
+        self.focus_rename = false;
+    }
+
+    fn mark_active_document_edited(&mut self) {
+        let title_changed = {
+            let document = self.workspace.active_document_mut();
+            document.dirty = true;
+            document.refresh_automatic_title()
+        };
+        self.workspace_index_dirty |= title_changed;
+        let now = Instant::now();
+        self.last_edit = Some(now);
+        self.dirty_since.get_or_insert(now);
+    }
+
+    fn flush_workspace_index(&mut self) {
+        if !self.workspace_index_dirty {
+            return;
+        }
+        match self.workspace.save_index() {
+            Ok(()) => self.workspace_index_dirty = false,
+            Err(error) => self.report_error(format!("Could not save note titles: {error}")),
+        }
+    }
+
+    fn export_notes(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("Export Goatpad notes")
+            .add_filter("Goatpad notes", &["json"])
+            .set_file_name("goatpad-notes.json")
+            .save_file()
+        else {
+            return;
+        };
+        if self.renaming_document.is_some() {
+            self.finish_rename();
+        }
+        self.flush_all_now();
+        match self.workspace.export_notes(&path) {
+            Ok(()) => self.report_success(format!(
+                "Exported {} notes to {}",
+                self.workspace.documents.len(),
+                path.display()
+            )),
+            Err(error) => self.report_error(format!("Could not export notes: {error}")),
+        }
+    }
+
+    fn import_notes(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("Import Goatpad notes")
+            .add_filter("Goatpad notes", &["json"])
+            .pick_file()
+        else {
+            return;
+        };
+        if self.renaming_document.is_some() {
+            self.finish_rename();
+        }
+        self.capture_active_tab_state();
+        self.flush_all_now();
+        match self.workspace.import_notes(&path) {
+            Ok(count) => {
+                self.cursor_offset = 0;
+                self.scroll_offset = 0.0;
+                self.restore_cursor = true;
+                self.last_edit = None;
+                self.dirty_since = None;
+                self.workspace_index_dirty = false;
+                self.save_session();
+                self.report_success(format!("Imported {count} notes from {}", path.display()));
+            }
+            Err(error) => self.report_error(format!("Could not import notes: {error}")),
+        }
+    }
+
     fn queue_active_save(&mut self) {
         let document = self.workspace.active_document();
         if !document.dirty {
@@ -187,6 +330,7 @@ impl GoatpadApp {
             self.workspace.active_document_mut().dirty = false;
             self.last_edit = None;
             self.dirty_since = None;
+            self.flush_workspace_index();
         }
     }
 
@@ -202,6 +346,7 @@ impl GoatpadApp {
                 self.workspace.documents[index].dirty = false;
             }
         }
+        self.flush_workspace_index();
     }
 
     fn flush_all_now(&mut self) {
@@ -217,6 +362,7 @@ impl GoatpadApp {
                 }
             }
         }
+        self.flush_workspace_index();
     }
 
     fn capture_active_tab_state(&mut self) {
@@ -234,6 +380,9 @@ impl GoatpadApp {
     fn switch_to(&mut self, index: usize) {
         if index == self.workspace.active {
             return;
+        }
+        if self.renaming_document.is_some() {
+            self.finish_rename();
         }
         self.capture_active_tab_state();
         self.flush_active_now();
@@ -262,6 +411,9 @@ impl GoatpadApp {
     }
 
     fn delete_tab(&mut self, id: Uuid) {
+        if self.renaming_document.is_some() {
+            self.finish_rename();
+        }
         self.capture_active_tab_state();
         self.flush_active_now();
         match self.workspace.delete_tab(id) {
@@ -295,6 +447,9 @@ impl GoatpadApp {
     }
 
     fn create_tab(&mut self) {
+        if self.renaming_document.is_some() {
+            self.finish_rename();
+        }
         self.capture_active_tab_state();
         self.flush_active_now();
         match self.workspace.new_tab() {
@@ -402,10 +557,7 @@ impl GoatpadApp {
         state.cursor.set_char_range(Some(new_range));
         state.store(ctx, editor_id);
         self.cursor_offset = new_range.primary.index.0;
-        self.workspace.active_document_mut().dirty = true;
-        let now = Instant::now();
-        self.last_edit = Some(now);
-        self.dirty_since.get_or_insert(now);
+        self.mark_active_document_edited();
     }
 }
 
@@ -522,18 +674,42 @@ impl eframe::App for GoatpadApp {
         self.update_window_geometry(&ctx);
         self.dispatch_hotkeys(&ctx);
         let mut requested_switch = None;
+        let mut requested_rename = None;
         let mut requested_new_tab = false;
+        let mut requested_import = false;
+        let mut requested_export = false;
+        let tabs = self
+            .workspace
+            .documents
+            .iter()
+            .enumerate()
+            .map(|(index, document)| (index, document.id, document.title.clone()))
+            .collect::<Vec<_>>();
         egui::Panel::top("tab_bar").show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                for (index, document) in self.workspace.documents.iter().enumerate() {
-                    if ui
-                        .selectable_label(index == self.workspace.active, &document.title)
-                        .clicked()
-                    {
-                        requested_switch = Some(index);
+                ui.menu_button("File", |ui| {
+                    if ui.button("Import notes…").clicked() {
+                        requested_import = true;
+                        ui.close();
+                    }
+                    if ui.button("Export notes…").clicked() {
+                        requested_export = true;
+                        ui.close();
+                    }
+                });
+                ui.separator();
+                for (index, id, title) in &tabs {
+                    let response = ui
+                        .selectable_label(*index == self.workspace.active, title)
+                        .on_hover_text("Double-click to rename");
+                    if response.clicked() {
+                        requested_switch = Some(*index);
+                    }
+                    if response.double_clicked() {
+                        requested_rename = Some(*id);
                     }
                     if ui.small_button("×").on_hover_text("Delete tab").clicked() {
-                        self.delete_confirmation = Some(document.id);
+                        self.delete_confirmation = Some(*id);
                     }
                 }
                 if ui.button("+").on_hover_text("New tab").clicked() {
@@ -547,8 +723,17 @@ impl eframe::App for GoatpadApp {
         if let Some(index) = requested_switch {
             self.switch_to(index);
         }
+        if let Some(id) = requested_rename {
+            self.begin_rename(id);
+        }
         if requested_new_tab {
             self.create_tab();
+        }
+        if requested_import {
+            self.import_notes();
+        }
+        if requested_export {
+            self.export_notes();
         }
 
         let (line, column) = cursor_position(
@@ -567,12 +752,52 @@ impl eframe::App for GoatpadApp {
         egui::CentralPanel::default().show(ui, |ui| {
             let document_id = self.workspace.active_document().id;
             let mut requested_kind = self.workspace.active_document().kind;
+            let mut requested_title_rename = false;
+            let mut finish_rename = false;
+            let mut cancel_rename = false;
             ui.horizontal(|ui| {
-                ui.heading(&self.workspace.active_document().title);
+                if self.renaming_document == Some(document_id) {
+                    let response = ui.add(
+                        egui::TextEdit::singleline(&mut self.rename_buffer)
+                            .desired_width(280.0)
+                            .hint_text("Note title"),
+                    );
+                    if self.focus_rename {
+                        response.request_focus();
+                        self.focus_rename = false;
+                    }
+                    let enter = response.has_focus()
+                        && ui.input_mut(|input| {
+                            input.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
+                        });
+                    cancel_rename = response.has_focus()
+                        && ui.input_mut(|input| {
+                            input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)
+                        });
+                    finish_rename = !cancel_rename && (enter || response.lost_focus());
+                } else {
+                    requested_title_rename = ui
+                        .add(
+                            egui::Label::new(
+                                egui::RichText::new(&self.workspace.active_document().title)
+                                    .heading(),
+                            )
+                            .sense(egui::Sense::click()),
+                        )
+                        .on_hover_text("Double-click to rename")
+                        .double_clicked();
+                }
                 ui.separator();
                 ui.selectable_value(&mut requested_kind, DocKind::Md, "MD");
                 ui.selectable_value(&mut requested_kind, DocKind::Txt, "TXT");
             });
+            if cancel_rename {
+                self.cancel_rename();
+            } else if finish_rename {
+                self.finish_rename();
+            } else if requested_title_rename {
+                self.begin_rename(document_id);
+            }
             if requested_kind != self.workspace.active_document().kind {
                 self.flush_active_now();
                 if let Err(error) = self
@@ -625,10 +850,7 @@ impl eframe::App for GoatpadApp {
                 self.cursor_offset = cursor_range.primary.index.0;
             }
             if editor.response.changed() {
-                let now = Instant::now();
-                self.workspace.active_document_mut().dirty = true;
-                self.last_edit = Some(now);
-                self.dirty_since.get_or_insert(now);
+                self.mark_active_document_edited();
             }
         });
 
@@ -749,18 +971,20 @@ impl eframe::App for GoatpadApp {
 
         let now = Instant::now();
         self.toasts
-            .retain(|(_, shown_at)| now.duration_since(*shown_at) < Duration::from_secs(8));
+            .retain(|toast| now.duration_since(toast.shown_at) < Duration::from_secs(8));
         if !self.toasts.is_empty() {
-            egui::Area::new(egui::Id::new("error_toasts"))
+            egui::Area::new(egui::Id::new("status_toasts"))
                 .anchor(egui::Align2::RIGHT_BOTTOM, [-12.0, -12.0])
                 .show(&ctx, |ui| {
-                    egui::Frame::popup(ui.style())
-                        .fill(egui::Color32::from_rgb(113, 42, 42))
-                        .show(ui, |ui| {
-                            for (message, _) in &self.toasts {
-                                ui.colored_label(egui::Color32::WHITE, message);
-                            }
-                        });
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        for toast in &self.toasts {
+                            let color = match toast.kind {
+                                ToastKind::Error => egui::Color32::from_rgb(235, 105, 105),
+                                ToastKind::Success => egui::Color32::from_rgb(107, 193, 123),
+                            };
+                            ui.colored_label(color, &toast.message);
+                        }
+                    });
                 });
         }
 
@@ -782,6 +1006,9 @@ impl eframe::App for GoatpadApp {
     }
 
     fn on_exit(&mut self) {
+        if self.renaming_document.is_some() {
+            self.finish_rename();
+        }
         self.flush_all_now();
         self.save_session();
     }

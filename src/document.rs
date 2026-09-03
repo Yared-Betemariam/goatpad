@@ -18,10 +18,14 @@ impl DocKind {
     }
 }
 
+const MAX_AUTOMATIC_TITLE_CHARS: usize = 32;
+const UNTITLED_TITLE: &str = "Untitled";
+
 #[derive(Debug)]
 pub struct Document {
     pub id: Uuid,
     pub title: String,
+    pub title_is_custom: bool,
     pub kind: DocKind,
     pub content: String,
     pub dirty: bool,
@@ -31,16 +35,93 @@ impl Document {
     pub fn new_untitled() -> Self {
         Self {
             id: Uuid::new_v4(),
-            title: "Untitled".to_owned(),
+            title: UNTITLED_TITLE.to_owned(),
+            title_is_custom: false,
             kind: DocKind::Md,
             content: String::new(),
             dirty: false,
         }
     }
+
+    pub fn refresh_automatic_title(&mut self) -> bool {
+        if self.title_is_custom {
+            return false;
+        }
+        let title = automatic_title(&self.content);
+        if self.title == title {
+            return false;
+        }
+        self.title = title;
+        true
+    }
+
+    pub fn rename(&mut self, title: &str) {
+        let title = title.trim();
+        if title.is_empty() {
+            self.title_is_custom = false;
+            self.title = automatic_title(&self.content);
+        } else {
+            self.title_is_custom = true;
+            self.title = title.to_owned();
+        }
+    }
+}
+
+pub fn automatic_title(content: &str) -> String {
+    let first_line = content.lines().next().unwrap_or_default().trim();
+    if first_line.is_empty() {
+        return UNTITLED_TITLE.to_owned();
+    }
+
+    let mut title: String = first_line.chars().take(MAX_AUTOMATIC_TITLE_CHARS).collect();
+    if first_line.chars().count() > MAX_AUTOMATIC_TITLE_CHARS {
+        title.push('…');
+    }
+    title
 }
 
 impl Default for Document {
     fn default() -> Self {
         Self::new_untitled()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Document, automatic_title};
+
+    #[test]
+    fn automatic_title_uses_the_trimmed_first_line() {
+        assert_eq!(automatic_title("  Shopping list  \nMilk"), "Shopping list");
+        assert_eq!(automatic_title("\nSecond line"), "Untitled");
+    }
+
+    #[test]
+    fn automatic_title_is_unicode_safe_and_truncated() {
+        let content = "🦀".repeat(40);
+        assert_eq!(automatic_title(&content), format!("{}…", "🦀".repeat(32)));
+    }
+
+    #[test]
+    fn a_custom_title_is_not_replaced_by_content_changes() {
+        let mut document = Document::new_untitled();
+        document.content = "Generated title".to_owned();
+        assert!(document.refresh_automatic_title());
+        document.rename("My note");
+        document.content = "Changed first line".to_owned();
+
+        assert!(!document.refresh_automatic_title());
+        assert_eq!(document.title, "My note");
+    }
+
+    #[test]
+    fn clearing_a_custom_title_restores_automatic_naming() {
+        let mut document = Document::new_untitled();
+        document.content = "Generated title".to_owned();
+        document.rename("Custom");
+        document.rename("   ");
+
+        assert!(!document.title_is_custom);
+        assert_eq!(document.title, "Generated title");
     }
 }

@@ -4,10 +4,11 @@ use crate::{
     persistence::atomic_write,
 };
 use serde::{Deserialize, Serialize};
-use std::{fs, io};
+use std::{fs, io, path::Path};
 use uuid::Uuid;
 
 const WORKSPACE_VERSION: u32 = 1;
+const NOTES_ARCHIVE_VERSION: u32 = 1;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WorkspaceIndex {
@@ -19,7 +20,24 @@ pub struct WorkspaceIndex {
 pub struct TabEntry {
     pub id: Uuid,
     pub title: String,
+    #[serde(default)]
+    pub title_is_custom: bool,
     pub kind: DocKind,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct NotesArchive {
+    version: u32,
+    notes: Vec<ArchivedNote>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ArchivedNote {
+    title: String,
+    #[serde(default)]
+    title_is_custom: bool,
+    kind: DocKind,
+    content: String,
 }
 
 #[derive(Debug)]
@@ -71,13 +89,16 @@ impl Workspace {
                         String::new()
                     }
                 };
-                Ok(Document {
+                let mut document = Document {
                     id: entry.id,
                     title: entry.title,
+                    title_is_custom: entry.title_is_custom,
                     kind: entry.kind,
                     content,
                     dirty: false,
-                })
+                };
+                document.refresh_automatic_title();
+                Ok(document)
             })
             .collect::<io::Result<Vec<_>>>()?;
 
@@ -146,6 +167,7 @@ impl Workspace {
                 .map(|document| TabEntry {
                     id: document.id,
                     title: document.title.clone(),
+                    title_is_custom: document.title_is_custom,
                     kind: document.kind,
                 })
                 .collect(),
@@ -153,6 +175,103 @@ impl Workspace {
         let data = serde_json::to_vec_pretty(&index)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         atomic_write(&self.paths.workspace_path(), &data)
+    }
+
+    pub fn rename_document(&mut self, id: Uuid, title: &str) -> io::Result<()> {
+        let index = self
+            .documents
+            .iter()
+            .position(|document| document.id == id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "document not found"))?;
+        let old_title = self.documents[index].title.clone();
+        let old_title_is_custom = self.documents[index].title_is_custom;
+        self.documents[index].rename(title);
+        if let Err(error) = self.save_index() {
+            self.documents[index].title = old_title;
+            self.documents[index].title_is_custom = old_title_is_custom;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    pub fn export_notes(&self, path: &Path) -> io::Result<()> {
+        let archive = NotesArchive {
+            version: NOTES_ARCHIVE_VERSION,
+            notes: self
+                .documents
+                .iter()
+                .map(|document| ArchivedNote {
+                    title: document.title.clone(),
+                    title_is_custom: document.title_is_custom,
+                    kind: document.kind,
+                    content: document.content.clone(),
+                })
+                .collect(),
+        };
+        let data = serde_json::to_vec_pretty(&archive)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        atomic_write(path, &data)
+    }
+
+    pub fn import_notes(&mut self, path: &Path) -> io::Result<usize> {
+        let archive: NotesArchive = serde_json::from_slice(&fs::read(path)?)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        if archive.version != NOTES_ARCHIVE_VERSION {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("unsupported notes archive version {}", archive.version),
+            ));
+        }
+        if archive.notes.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "notes archive is empty",
+            ));
+        }
+
+        let documents = archive
+            .notes
+            .into_iter()
+            .map(|note| {
+                let title_is_custom = note.title_is_custom && !note.title.trim().is_empty();
+                let mut document = Document {
+                    id: Uuid::new_v4(),
+                    title: note.title.trim().to_owned(),
+                    title_is_custom,
+                    kind: note.kind,
+                    content: note.content,
+                    dirty: false,
+                };
+                document.refresh_automatic_title();
+                document
+            })
+            .collect::<Vec<_>>();
+
+        let mut written_paths = Vec::with_capacity(documents.len());
+        for document in &documents {
+            if let Err(error) = self.save_document(document) {
+                for path in written_paths {
+                    let _ = fs::remove_file(path);
+                }
+                return Err(error);
+            }
+            written_paths.push(self.document_path(document.id, document.kind));
+        }
+
+        let previous_active = self.active;
+        let first_imported = self.documents.len();
+        let imported_count = documents.len();
+        self.documents.extend(documents);
+        self.active = first_imported;
+        if let Err(error) = self.save_index() {
+            self.documents.truncate(first_imported);
+            self.active = previous_active;
+            for path in written_paths {
+                let _ = fs::remove_file(path);
+            }
+            return Err(error);
+        }
+        Ok(imported_count)
     }
 
     pub fn set_document_kind(&mut self, id: Uuid, kind: DocKind) -> io::Result<()> {
@@ -264,5 +383,70 @@ mod tests {
         assert_eq!(warnings.len(), 1);
         assert!(!path.exists());
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn renamed_document_title_survives_reload() {
+        let directory =
+            std::env::temp_dir().join(format!("goatpad-workspace-test-{}", uuid::Uuid::new_v4()));
+        let paths = AppPaths::for_test(directory.clone()).unwrap();
+        let (mut workspace, _) = Workspace::load(paths.clone()).unwrap();
+        let id = workspace.active_document().id;
+
+        workspace.rename_document(id, "Project ideas").unwrap();
+        let (reloaded, warnings) = Workspace::load(paths).unwrap();
+
+        assert!(warnings.is_empty());
+        assert_eq!(reloaded.active_document().title, "Project ideas");
+        assert!(reloaded.active_document().title_is_custom);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn exported_notes_can_be_imported_with_fresh_ids() {
+        let source_directory =
+            std::env::temp_dir().join(format!("goatpad-export-test-{}", uuid::Uuid::new_v4()));
+        let target_directory =
+            std::env::temp_dir().join(format!("goatpad-import-test-{}", uuid::Uuid::new_v4()));
+        let source_paths = AppPaths::for_test(source_directory.clone()).unwrap();
+        let target_paths = AppPaths::for_test(target_directory.clone()).unwrap();
+        let archive_path = source_directory.join("notes.goatpad.json");
+        let (mut source, _) = Workspace::load(source_paths).unwrap();
+        source.active_document_mut().content = "Automatic name\nBody".to_owned();
+        source.active_document_mut().refresh_automatic_title();
+        source.save_document(source.active_document()).unwrap();
+        source.new_tab().unwrap();
+        let second_id = source.active_document().id;
+        source.active_document_mut().content = "Other content".to_owned();
+        source.rename_document(second_id, "Custom name").unwrap();
+        source.save_document(source.active_document()).unwrap();
+        let source_ids = source
+            .documents
+            .iter()
+            .map(|document| document.id)
+            .collect::<Vec<_>>();
+        source.export_notes(&archive_path).unwrap();
+
+        let (mut target, _) = Workspace::load(target_paths.clone()).unwrap();
+        assert_eq!(target.import_notes(&archive_path).unwrap(), 2);
+
+        assert_eq!(target.documents.len(), 3);
+        assert_eq!(target.documents[1].title, "Automatic name");
+        assert!(!target.documents[1].title_is_custom);
+        assert_eq!(target.documents[1].content, "Automatic name\nBody");
+        assert_eq!(target.documents[2].title, "Custom name");
+        assert!(target.documents[2].title_is_custom);
+        assert!(
+            target.documents[1..]
+                .iter()
+                .all(|document| !source_ids.contains(&document.id))
+        );
+        let (reloaded, warnings) = Workspace::load(target_paths).unwrap();
+        assert!(warnings.is_empty());
+        assert_eq!(reloaded.documents.len(), 3);
+        assert_eq!(reloaded.documents[2].content, "Other content");
+
+        fs::remove_dir_all(source_directory).unwrap();
+        fs::remove_dir_all(target_directory).unwrap();
     }
 }

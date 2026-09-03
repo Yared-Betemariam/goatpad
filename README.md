@@ -5,6 +5,8 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 ## Features
 
 - Markdown and plain-text editing in persistent tabs
+- Automatic note titles derived from the first line, with custom titles on double-click
+- Import and export of all notes through portable JSON backups
 - Live Markdown highlighting and common formatting actions
 - Automatic background saving
 - Workspace and window restoration between launches
@@ -84,6 +86,14 @@ Close Goatpad before upgrading. Uninstalling or upgrading the application does n
 
 Shortcuts can be changed from the application settings.
 
+## Note titles
+
+New notes are named `Untitled` until you type on the first line. Goatpad then uses up to the first 32 characters of that line as the note title. Double-click a tab or the large title above the editor to enter a custom title. Clear the custom title to return to automatic naming.
+
+## Import and export
+
+Use `File > Export notes…` to save every open note, including its title and Markdown or plain-text type, to a portable JSON backup. Use `File > Import notes…` to append the notes from a backup to the current workspace. Imported notes receive new internal IDs, so importing a backup does not overwrite existing notes.
+
 ## Local data
 
 Goatpad stores documents, settings, themes, and session data in the Windows application-data directory, normally:
@@ -106,5 +116,4 @@ cargo fmt -- --check
 
 ## Current limitations
 
-- Import and export workflows are not yet available
 - MSI packaging currently targets 64-bit Windows
