@@ -29,9 +29,9 @@ use theme::{
 };
 use workspace::Workspace;
 
-const TITLE_BAR_HEIGHT: f32 = 40.0;
-const ACTION_BAR_HEIGHT: f32 = 30.0;
-const TITLE_BAR_SPACING: f32 = 4.0;
+const TITLE_BAR_HEIGHT: f32 = 42.0;
+const ACTION_BAR_HEIGHT: f32 = 42.0;
+const TITLE_BAR_SPACING: f32 = 6.0;
 const TITLE_CONTROL_WIDTH: f32 = 32.0;
 const WINDOW_BUTTON_WIDTH: f32 = 46.0;
 const MIN_DRAG_WIDTH: f32 = 48.0;
@@ -308,7 +308,13 @@ impl GoatpadApp {
     fn render_themes_settings(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         if let Some(mut draft) = self.editing_theme.take() {
             ui.horizontal(|ui| {
-                if ui.button("← Back to themes").clicked() {
+                if ui
+                    .button(format!(
+                        "{} Back to themes",
+                        egui_phosphor::regular::ARROW_LEFT
+                    ))
+                    .clicked()
+                {
                     apply_theme(ctx, &self.theme_draft);
                     return;
                 }
@@ -386,7 +392,10 @@ impl GoatpadApp {
         ui.horizontal(|ui| {
             ui.heading("Available themes");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("+ New Theme").clicked() {
+                if ui
+                    .button(format!("{} New Theme", egui_phosphor::regular::PLUS))
+                    .clicked()
+                {
                     self.start_create_theme();
                 }
             });
@@ -415,13 +424,21 @@ impl GoatpadApp {
                     let is_active = theme.name == self.settings.theme;
                     let is_builtin = theme.is_builtin();
                     ui.horizontal(|ui| {
-                        let badge = if is_active { "● " } else { "  " };
+                        let badge = if is_active {
+                            format!("{} ", egui_phosphor::regular::CHECK)
+                        } else {
+                            "   ".to_owned()
+                        };
                         ui.label(badge);
                         ui.label(egui::RichText::new(theme.display_name()).strong());
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if !is_builtin {
-                                if ui.small_button("🗑").on_hover_text("Delete theme").clicked() {
+                                if ui
+                                    .small_button(egui_phosphor::regular::TRASH)
+                                    .on_hover_text("Delete theme")
+                                    .clicked()
+                                {
                                     self.theme_delete_confirm = Some(theme.name.clone());
                                 }
                                 if ui
@@ -953,7 +970,16 @@ fn show_app_icon(ui: &mut egui::Ui, app_icon_texture: &egui::TextureHandle) {
     );
 }
 
-fn window_button(ui: &mut egui::Ui, label: &str, is_close: bool) -> egui::Response {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WindowControlKind {
+    Minimize,
+    Maximize,
+    Restore,
+    Close,
+}
+
+fn window_control_button(ui: &mut egui::Ui, kind: WindowControlKind) -> egui::Response {
+    let is_close = kind == WindowControlKind::Close;
     let (rect, response) = ui.allocate_exact_size(
         egui::vec2(WINDOW_BUTTON_WIDTH, TITLE_BAR_HEIGHT),
         egui::Sense::click(),
@@ -969,18 +995,73 @@ fn window_button(ui: &mut egui::Ui, label: &str, is_close: bool) -> egui::Respon
         egui::Color32::TRANSPARENT
     };
     ui.painter().rect_filled(rect, 0.0, fill);
-    let text_color = if is_close && (response.hovered() || pointer_down) {
+    let stroke_color = if is_close && (response.hovered() || pointer_down) {
         egui::Color32::WHITE
     } else {
         ui.style().visuals.text_color()
     };
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        label,
-        egui::TextStyle::Button.resolve(ui.style()),
-        text_color,
-    );
+    let center = rect.center();
+
+    match kind {
+        WindowControlKind::Minimize => {
+            let cy = center.y.round() + 0.5;
+            let cx = center.x.round();
+            ui.painter().line_segment(
+                [egui::pos2(cx - 5.0, cy), egui::pos2(cx + 5.0, cy)],
+                egui::Stroke::new(1.0, stroke_color),
+            );
+        }
+        WindowControlKind::Maximize => {
+            let box_rect = egui::Rect::from_center_size(center, egui::vec2(10.0, 10.0));
+            ui.painter().rect_stroke(
+                box_rect,
+                0.0,
+                egui::Stroke::new(1.0, stroke_color),
+                egui::StrokeKind::Middle,
+            );
+        }
+        WindowControlKind::Restore => {
+            let back =
+                egui::Rect::from_min_size(center + egui::vec2(-2.5, -4.5), egui::vec2(7.0, 7.0));
+            ui.painter().rect_stroke(
+                back,
+                0.0,
+                egui::Stroke::new(1.0, stroke_color),
+                egui::StrokeKind::Middle,
+            );
+            let front =
+                egui::Rect::from_min_size(center + egui::vec2(-4.5, -2.5), egui::vec2(7.0, 7.0));
+            let bg_fill = if fill == egui::Color32::TRANSPARENT {
+                ui.style().visuals.panel_fill
+            } else {
+                fill
+            };
+            ui.painter().rect_filled(front, 0.0, bg_fill);
+            ui.painter().rect_stroke(
+                front,
+                0.0,
+                egui::Stroke::new(1.0, stroke_color),
+                egui::StrokeKind::Middle,
+            );
+        }
+        WindowControlKind::Close => {
+            let d = 4.5;
+            ui.painter().line_segment(
+                [
+                    egui::pos2(center.x - d, center.y - d),
+                    egui::pos2(center.x + d, center.y + d),
+                ],
+                egui::Stroke::new(1.2, stroke_color),
+            );
+            ui.painter().line_segment(
+                [
+                    egui::pos2(center.x - d, center.y + d),
+                    egui::pos2(center.x + d, center.y - d),
+                ],
+                egui::Stroke::new(1.2, stroke_color),
+            );
+        }
+    }
     response
 }
 
@@ -1137,7 +1218,12 @@ impl eframe::App for GoatpadApp {
             .frame(
                 egui::Frame::new()
                     .fill(ui.style().visuals.panel_fill)
-                    .inner_margin(egui::Margin::ZERO),
+                    .inner_margin(egui::Margin {
+                        left: 10,
+                        right: 0,
+                        top: 0,
+                        bottom: 0,
+                    }),
             )
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(TITLE_BAR_SPACING, 0.0);
@@ -1202,8 +1288,13 @@ impl eframe::App for GoatpadApp {
                                             if response.double_clicked() {
                                                 requested_rename = Some(*id);
                                             }
-                                            let close_response =
-                                                ui.small_button("×").on_hover_text("Close tab");
+                                            let close_response = ui
+                                                .add(
+                                                    egui::Button::new(egui_phosphor::regular::X)
+                                                        .frame(false)
+                                                        .min_size(egui::vec2(18.0, 18.0)),
+                                                )
+                                                .on_hover_text("Close tab");
                                             if response.middle_clicked()
                                                 || close_response.middle_clicked()
                                                 || close_response.clicked()
@@ -1219,7 +1310,7 @@ impl eframe::App for GoatpadApp {
                     if ui
                         .add_sized(
                             [TITLE_CONTROL_WIDTH, TITLE_CONTROL_WIDTH],
-                            egui::Button::new("+").frame(false),
+                            egui::Button::new(egui_phosphor::regular::PLUS).frame(false),
                         )
                         .on_hover_text("New tab")
                         .clicked()
@@ -1229,7 +1320,7 @@ impl eframe::App for GoatpadApp {
                     if ui
                         .add_sized(
                             [TITLE_CONTROL_WIDTH, TITLE_CONTROL_WIDTH],
-                            egui::Button::new("⋯").frame(false),
+                            egui::Button::new(egui_phosphor::regular::LIST).frame(false),
                         )
                         .on_hover_text("Tabs list")
                         .clicked()
@@ -1253,21 +1344,25 @@ impl eframe::App for GoatpadApp {
                         }
                     }
 
-                    if window_button(ui, "−", false)
+                    if window_control_button(ui, WindowControlKind::Minimize)
                         .on_hover_text("Minimize")
                         .clicked()
                     {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                     }
                     let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
-                    let maximize_label = if maximized { "❐" } else { "□" };
-                    if window_button(ui, maximize_label, false)
+                    let max_kind = if maximized {
+                        WindowControlKind::Restore
+                    } else {
+                        WindowControlKind::Maximize
+                    };
+                    if window_control_button(ui, max_kind)
                         .on_hover_text(if maximized { "Restore" } else { "Maximize" })
                         .clicked()
                     {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
                     }
-                    if window_button(ui, "×", true)
+                    if window_control_button(ui, WindowControlKind::Close)
                         .on_hover_text("Close")
                         .clicked()
                     {
@@ -1298,12 +1393,18 @@ impl eframe::App for GoatpadApp {
             .frame(
                 egui::Frame::new()
                     .fill(ui.style().visuals.panel_fill)
-                    .inner_margin(egui::Margin::ZERO),
+                    .inner_margin(egui::Margin {
+                        left: 14,
+                        right: 14,
+                        top: 4,
+                        bottom: 4,
+                    }),
             )
             .show(ui, |ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(6.0, 0.0);
+                ui.spacing_mut().button_padding = egui::vec2(7.0, 4.0);
                 ui.horizontal(|ui| {
-                    ui.set_height(ACTION_BAR_HEIGHT);
-                    ui.add_space(8.0);
+                    ui.set_height(ACTION_BAR_HEIGHT - 8.0);
 
                     // Region 1: Actions
                     ui.menu_button("File", |ui| {
@@ -1486,116 +1587,230 @@ impl eframe::App for GoatpadApp {
                     if active_is_markdown {
                         ui.separator();
                         let available_width = ui.available_width();
-                        if available_width < 340.0 {
+                        if available_width < 380.0 {
                             ui.menu_button("Format", |ui| {
-                                ui.menu_button("Headings", |ui| {
-                                    if ui.button("Heading 1").clicked() {
-                                        self.apply_heading(&ctx, 1);
-                                        ui.close();
-                                    }
-                                    if ui.button("Heading 2").clicked() {
-                                        self.apply_heading(&ctx, 2);
-                                        ui.close();
-                                    }
-                                    if ui.button("Heading 3").clicked() {
-                                        self.apply_heading(&ctx, 3);
-                                        ui.close();
-                                    }
-                                });
-                                ui.menu_button("Lists", |ui| {
-                                    if ui.button("Bulleted list").clicked() {
-                                        self.apply_formatting(&ctx, Action::ToggleBulletList);
-                                        ui.close();
-                                    }
-                                    if ui.button("Numbered list").clicked() {
-                                        self.apply_formatting(&ctx, Action::ToggleNumberedList);
-                                        ui.close();
-                                    }
-                                });
+                                ui.menu_button(
+                                    format!("{} Headings", egui_phosphor::regular::TEXT_H),
+                                    |ui| {
+                                        if ui
+                                            .button(format!(
+                                                "{} Heading 1",
+                                                egui_phosphor::regular::TEXT_H_ONE
+                                            ))
+                                            .clicked()
+                                        {
+                                            self.apply_heading(&ctx, 1);
+                                            ui.close();
+                                        }
+                                        if ui
+                                            .button(format!(
+                                                "{} Heading 2",
+                                                egui_phosphor::regular::TEXT_H_TWO
+                                            ))
+                                            .clicked()
+                                        {
+                                            self.apply_heading(&ctx, 2);
+                                            ui.close();
+                                        }
+                                        if ui
+                                            .button(format!(
+                                                "{} Heading 3",
+                                                egui_phosphor::regular::TEXT_H_THREE
+                                            ))
+                                            .clicked()
+                                        {
+                                            self.apply_heading(&ctx, 3);
+                                            ui.close();
+                                        }
+                                    },
+                                );
+                                ui.menu_button(
+                                    format!("{} Lists", egui_phosphor::regular::LIST_BULLETS),
+                                    |ui| {
+                                        if ui
+                                            .button(format!(
+                                                "{} Bulleted list",
+                                                egui_phosphor::regular::LIST_BULLETS
+                                            ))
+                                            .clicked()
+                                        {
+                                            self.apply_formatting(&ctx, Action::ToggleBulletList);
+                                            ui.close();
+                                        }
+                                        if ui
+                                            .button(format!(
+                                                "{} Numbered list",
+                                                egui_phosphor::regular::LIST_NUMBERS
+                                            ))
+                                            .clicked()
+                                        {
+                                            self.apply_formatting(&ctx, Action::ToggleNumberedList);
+                                            ui.close();
+                                        }
+                                    },
+                                );
                                 ui.separator();
-                                if ui.button("Bold (Ctrl+B)").clicked() {
+                                if ui
+                                    .button(format!(
+                                        "{} Bold (Ctrl+B)",
+                                        egui_phosphor::regular::TEXT_B
+                                    ))
+                                    .clicked()
+                                {
                                     self.apply_formatting(&ctx, Action::ToggleBold);
                                     ui.close();
                                 }
-                                if ui.button("Italic (Ctrl+I)").clicked() {
+                                if ui
+                                    .button(format!(
+                                        "{} Italic (Ctrl+I)",
+                                        egui_phosphor::regular::TEXT_ITALIC
+                                    ))
+                                    .clicked()
+                                {
                                     self.apply_formatting(&ctx, Action::ToggleItalic);
                                     ui.close();
                                 }
-                                if ui.button("Strikethrough (Ctrl+Shift+X)").clicked() {
+                                if ui
+                                    .button(format!(
+                                        "{} Strikethrough (Ctrl+Shift+X)",
+                                        egui_phosphor::regular::TEXT_STRIKETHROUGH
+                                    ))
+                                    .clicked()
+                                {
                                     self.apply_formatting(&ctx, Action::ToggleStrikethrough);
                                     ui.close();
                                 }
                                 ui.separator();
-                                if ui.button("Link… (Ctrl+K)").clicked() {
+                                if ui
+                                    .button(format!(
+                                        "{} Link… (Ctrl+K)",
+                                        egui_phosphor::regular::LINK
+                                    ))
+                                    .clicked()
+                                {
                                     self.apply_formatting(&ctx, Action::InsertLink);
                                     ui.close();
                                 }
-                                if ui.button("Table").clicked() {
+                                if ui
+                                    .button(format!("{} Table", egui_phosphor::regular::TABLE))
+                                    .clicked()
+                                {
                                     self.apply_table_insert(&ctx);
                                     ui.close();
                                 }
                                 ui.separator();
-                                if ui.button("Clear formatting").clicked() {
+                                if ui
+                                    .button(format!(
+                                        "{} Clear formatting",
+                                        egui_phosphor::regular::ERASER
+                                    ))
+                                    .clicked()
+                                {
                                     self.apply_clear_formatting(&ctx);
                                     ui.close();
                                 }
                             });
                         } else {
-                            ui.menu_button("H1", |ui| {
-                                if ui.button("Heading 1").clicked() {
-                                    self.apply_heading(&ctx, 1);
-                                    ui.close();
-                                }
-                                if ui.button("Heading 2").clicked() {
-                                    self.apply_heading(&ctx, 2);
-                                    ui.close();
-                                }
-                                if ui.button("Heading 3").clicked() {
-                                    self.apply_heading(&ctx, 3);
-                                    ui.close();
-                                }
-                            });
-                            ui.menu_button("≡", |ui| {
-                                if ui.button("Bulleted list").clicked() {
+                            ui.menu_button(
+                                format!("{} H1", egui_phosphor::regular::TEXT_H),
+                                |ui| {
+                                    if ui
+                                        .button(format!(
+                                            "{} Heading 1",
+                                            egui_phosphor::regular::TEXT_H_ONE
+                                        ))
+                                        .clicked()
+                                    {
+                                        self.apply_heading(&ctx, 1);
+                                        ui.close();
+                                    }
+                                    if ui
+                                        .button(format!(
+                                            "{} Heading 2",
+                                            egui_phosphor::regular::TEXT_H_TWO
+                                        ))
+                                        .clicked()
+                                    {
+                                        self.apply_heading(&ctx, 2);
+                                        ui.close();
+                                    }
+                                    if ui
+                                        .button(format!(
+                                            "{} Heading 3",
+                                            egui_phosphor::regular::TEXT_H_THREE
+                                        ))
+                                        .clicked()
+                                    {
+                                        self.apply_heading(&ctx, 3);
+                                        ui.close();
+                                    }
+                                },
+                            );
+                            ui.menu_button(egui_phosphor::regular::LIST_BULLETS, |ui| {
+                                if ui
+                                    .button(format!(
+                                        "{} Bulleted list",
+                                        egui_phosphor::regular::LIST_BULLETS
+                                    ))
+                                    .clicked()
+                                {
                                     self.apply_formatting(&ctx, Action::ToggleBulletList);
                                     ui.close();
                                 }
-                                if ui.button("Numbered list").clicked() {
+                                if ui
+                                    .button(format!(
+                                        "{} Numbered list",
+                                        egui_phosphor::regular::LIST_NUMBERS
+                                    ))
+                                    .clicked()
+                                {
                                     self.apply_formatting(&ctx, Action::ToggleNumberedList);
                                     ui.close();
                                 }
                             });
                             ui.separator();
                             if ui
-                                .button(egui::RichText::new("B").strong())
+                                .button(egui_phosphor::regular::TEXT_B)
                                 .on_hover_text("Bold (Ctrl+B)")
                                 .clicked()
                             {
                                 self.apply_formatting(&ctx, Action::ToggleBold);
                             }
                             if ui
-                                .button(egui::RichText::new("I").italics())
+                                .button(egui_phosphor::regular::TEXT_ITALIC)
                                 .on_hover_text("Italic (Ctrl+I)")
                                 .clicked()
                             {
                                 self.apply_formatting(&ctx, Action::ToggleItalic);
                             }
                             if ui
-                                .button(egui::RichText::new("S").strikethrough())
+                                .button(egui_phosphor::regular::TEXT_STRIKETHROUGH)
                                 .on_hover_text("Strikethrough (Ctrl+Shift+X)")
                                 .clicked()
                             {
                                 self.apply_formatting(&ctx, Action::ToggleStrikethrough);
                             }
                             ui.separator();
-                            if ui.button("🔗").on_hover_text("Link (Ctrl+K)").clicked() {
+                            if ui
+                                .button(egui_phosphor::regular::LINK)
+                                .on_hover_text("Link (Ctrl+K)")
+                                .clicked()
+                            {
                                 self.apply_formatting(&ctx, Action::InsertLink);
                             }
-                            if ui.button("▦").on_hover_text("Table").clicked() {
+                            if ui
+                                .button(egui_phosphor::regular::TABLE)
+                                .on_hover_text("Table")
+                                .clicked()
+                            {
                                 self.apply_table_insert(&ctx);
                             }
                             ui.separator();
-                            if ui.button("Aa").on_hover_text("Clear formatting").clicked() {
+                            if ui
+                                .button(egui_phosphor::regular::ERASER)
+                                .on_hover_text("Clear formatting")
+                                .clicked()
+                            {
                                 self.apply_clear_formatting(&ctx);
                             }
                         }
@@ -1603,7 +1818,7 @@ impl eframe::App for GoatpadApp {
 
                     // Region 3: MD/TXT Switcher (right-aligned)
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.add_space(8.0);
+                        ui.spacing_mut().button_padding = egui::vec2(10.0, 4.0);
                         if let Some(document_id) = self.session.active_tab {
                             if let Some(document) = self.workspace.document(document_id) {
                                 let mut requested_kind = document.kind;
@@ -1652,7 +1867,10 @@ impl eframe::App for GoatpadApp {
                 .show(&ctx, |ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.tabs_list_search)
-                            .hint_text("Search notes…")
+                            .hint_text(format!(
+                                "{} Search notes…",
+                                egui_phosphor::regular::MAGNIFYING_GLASS
+                            ))
                             .desired_width(f32::INFINITY),
                     );
                     ui.separator();
@@ -1665,7 +1883,12 @@ impl eframe::App for GoatpadApp {
                                     continue;
                                 }
                                 ui.horizontal(|ui| {
-                                    ui.label(if *is_open { "●" } else { " " }).on_hover_text(
+                                    ui.label(if *is_open {
+                                        egui_phosphor::regular::CHECK
+                                    } else {
+                                        " "
+                                    })
+                                    .on_hover_text(
                                         if *is_open {
                                             "Open in the tab bar"
                                         } else {
@@ -1680,7 +1903,7 @@ impl eframe::App for GoatpadApp {
                                         requested_list_open = Some(*id);
                                     }
                                     if ui
-                                        .small_button("🗑")
+                                        .small_button(egui_phosphor::regular::TRASH)
                                         .on_hover_text("Delete note permanently")
                                         .clicked()
                                     {
@@ -1712,106 +1935,144 @@ impl eframe::App for GoatpadApp {
                 )
             })
         });
-        egui::Panel::bottom("footer").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                if let Some(((line, column), character_count, line_ending)) = editor_stats {
-                    ui.label(format!("Ln {line}, Col {column}"));
-                    ui.separator();
-                    ui.label(format!("{character_count} chars"));
-                    ui.separator();
-                    ui.label(if active_is_markdown {
-                        "Markdown"
+        egui::Panel::bottom("footer")
+            .exact_size(38.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(ui.style().visuals.panel_fill)
+                    .inner_margin(egui::Margin {
+                        left: 16,
+                        right: 16,
+                        top: 4,
+                        bottom: 4,
+                    }),
+            )
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(12.0, 0.0);
+                ui.spacing_mut().button_padding = egui::vec2(6.0, 3.0);
+                ui.horizontal(|ui| {
+                    ui.set_height(24.0);
+                    if let Some(((line, column), character_count, line_ending)) = editor_stats {
+                        ui.label(format!("Ln {line}, Col {column}"));
+                        ui.separator();
+                        ui.label(format!("{character_count} chars"));
+                        ui.separator();
+                        ui.label(if active_is_markdown {
+                            "Markdown"
+                        } else {
+                            "Plain text"
+                        });
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label("UTF-8");
+                            ui.separator();
+                            ui.label(line_ending);
+                            ui.separator();
+                            if ui
+                                .button(egui_phosphor::regular::MAGNIFYING_GLASS_PLUS)
+                                .on_hover_text("Zoom in")
+                                .clicked()
+                            {
+                                self.zoom = (self.zoom + 0.1).min(3.0);
+                            }
+                            if ui
+                                .button(format!("{:.0}%", self.zoom * 100.0))
+                                .on_hover_text("Reset zoom")
+                                .clicked()
+                            {
+                                self.zoom = 1.0;
+                            }
+                            if ui
+                                .button(egui_phosphor::regular::MAGNIFYING_GLASS_MINUS)
+                                .on_hover_text("Zoom out")
+                                .clicked()
+                            {
+                                self.zoom = (self.zoom - 0.1).max(0.5);
+                            }
+                        });
                     } else {
-                        "Plain text"
+                        ui.label("No tab open");
+                    }
+                });
+            });
+
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::new()
+                    .fill(ui.style().visuals.panel_fill)
+                    .inner_margin(egui::Margin {
+                        left: 24,
+                        right: 24,
+                        top: 16,
+                        bottom: 20,
+                    }),
+            )
+            .show(ui, |ui| {
+                let Some(document_id) = self.session.active_tab else {
+                    ui.centered_and_justified(|ui| {
+                        ui.label(
+                            "No tabs open — create a new note, or pick one from the tabs list.",
+                        );
                     });
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label("UTF-8");
-                        ui.separator();
-                        ui.label(line_ending);
-                        ui.separator();
-                        if ui.small_button("+").on_hover_text("Zoom in").clicked() {
-                            self.zoom = (self.zoom + 0.1).min(3.0);
-                        }
-                        if ui
-                            .button(format!("{:.0}%", self.zoom * 100.0))
-                            .on_hover_text("Reset zoom")
-                            .clicked()
-                        {
-                            self.zoom = 1.0;
-                        }
-                        if ui.small_button("−").on_hover_text("Zoom out").clicked() {
-                            self.zoom = (self.zoom - 0.1).max(0.5);
-                        }
+                    return;
+                };
+                if !self.workspace.set_active_by_id(document_id) {
+                    ui.centered_and_justified(|ui| {
+                        ui.label(
+                            "No tabs open — create a new note, or pick one from the tabs list.",
+                        );
                     });
-                } else {
-                    ui.label("No tab open");
+                    return;
+                }
+                let is_markdown = self.workspace.active_document().kind == DocKind::Md;
+                let zoom = self.zoom;
+                let font_family = self.theme_draft.content_font_family();
+                let text_color = ui.visuals().text_color();
+                let editor_id = self.editor_id();
+                let mut layouter =
+                    move |ui: &egui::Ui, buffer: &dyn egui::TextBuffer, wrap_width: f32| {
+                        let mut job = if is_markdown {
+                            highlighting::highlight(buffer.as_str(), zoom, &font_family, text_color)
+                        } else {
+                            highlighting::plain(buffer.as_str(), zoom, &font_family, text_color)
+                        };
+                        job.wrap.max_width = wrap_width;
+                        ui.fonts_mut(|fonts| fonts.layout_job(job))
+                    };
+                let output = egui::ScrollArea::vertical()
+                    .id_salt(("editor-scroll", document_id))
+                    .vertical_scroll_offset(self.scroll_offset)
+                    .show(ui, |ui| {
+                        egui::TextEdit::multiline(&mut self.workspace.active_document_mut().content)
+                            .id(editor_id)
+                            .desired_width(f32::INFINITY)
+                            .frame(egui::Frame::NONE)
+                            .layouter(&mut layouter)
+                            .show(ui)
+                    });
+                self.scroll_offset = output.state.offset.y;
+                let editor = output.inner;
+                if self.restore_cursor {
+                    let offset = self
+                        .cursor_offset
+                        .min(self.workspace.active_document().content.chars().count());
+                    let mut state =
+                        egui::widgets::text_edit::TextEditState::load(&ctx, editor.response.id)
+                            .unwrap_or_default();
+                    state
+                        .cursor
+                        .set_char_range(Some(egui::text::CCursorRange::one(
+                            egui::text::CCursor::new(offset),
+                        )));
+                    state.store(&ctx, editor.response.id);
+                    self.restore_cursor = false;
+                }
+                if let Some(cursor_range) = editor.cursor_range {
+                    self.cursor_offset = cursor_range.primary.index.0;
+                }
+                if editor.response.changed() {
+                    self.mark_active_document_edited();
                 }
             });
-        });
-
-        egui::CentralPanel::default().show(ui, |ui| {
-            let Some(document_id) = self.session.active_tab else {
-                ui.centered_and_justified(|ui| {
-                    ui.label("No tabs open — create a new note, or pick one from the tabs list.");
-                });
-                return;
-            };
-            if !self.workspace.set_active_by_id(document_id) {
-                ui.centered_and_justified(|ui| {
-                    ui.label("No tabs open — create a new note, or pick one from the tabs list.");
-                });
-                return;
-            }
-            let is_markdown = self.workspace.active_document().kind == DocKind::Md;
-            let zoom = self.zoom;
-            let font_family = self.theme_draft.content_font_family();
-            let text_color = ui.visuals().text_color();
-            let editor_id = self.editor_id();
-            let mut layouter =
-                move |ui: &egui::Ui, buffer: &dyn egui::TextBuffer, wrap_width: f32| {
-                    let mut job = if is_markdown {
-                        highlighting::highlight(buffer.as_str(), zoom, &font_family, text_color)
-                    } else {
-                        highlighting::plain(buffer.as_str(), zoom, &font_family, text_color)
-                    };
-                    job.wrap.max_width = wrap_width;
-                    ui.fonts_mut(|fonts| fonts.layout_job(job))
-                };
-            let output = egui::ScrollArea::vertical()
-                .id_salt(("editor-scroll", document_id))
-                .vertical_scroll_offset(self.scroll_offset)
-                .show(ui, |ui| {
-                    egui::TextEdit::multiline(&mut self.workspace.active_document_mut().content)
-                        .id(editor_id)
-                        .desired_width(f32::INFINITY)
-                        .frame(egui::Frame::NONE)
-                        .layouter(&mut layouter)
-                        .show(ui)
-                });
-            self.scroll_offset = output.state.offset.y;
-            let editor = output.inner;
-            if self.restore_cursor {
-                let offset = self
-                    .cursor_offset
-                    .min(self.workspace.active_document().content.chars().count());
-                let mut state =
-                    egui::widgets::text_edit::TextEditState::load(&ctx, editor.response.id)
-                        .unwrap_or_default();
-                state
-                    .cursor
-                    .set_char_range(Some(egui::text::CCursorRange::one(
-                        egui::text::CCursor::new(offset),
-                    )));
-                state.store(&ctx, editor.response.id);
-                self.restore_cursor = false;
-            }
-            if let Some(cursor_range) = editor.cursor_range {
-                self.cursor_offset = cursor_range.primary.index.0;
-            }
-            if editor.response.changed() {
-                self.mark_active_document_edited();
-            }
-        });
 
         if let Some(id) = self.delete_confirmation {
             let title = self

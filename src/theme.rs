@@ -3,7 +3,6 @@ use crate::{paths::AppPaths, persistence::atomic_write};
 use egui::FontData;
 use egui::{Color32, FontDefinitions, FontFamily, Visuals};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-#[cfg(target_os = "windows")]
 use std::sync::Arc;
 use std::{fs, io, path::PathBuf};
 
@@ -171,6 +170,19 @@ impl Theme {
 pub fn install_fonts(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
 
+    fonts.font_data.insert(
+        "phosphor".to_owned(),
+        Arc::new(FontData::from_static(
+            egui_phosphor::Variant::Regular.font_bytes(),
+        )),
+    );
+    if let Some(family) = fonts.families.get_mut(&FontFamily::Proportional) {
+        family.push("phosphor".to_owned());
+    }
+    if let Some(family) = fonts.families.get_mut(&FontFamily::Monospace) {
+        family.push("phosphor".to_owned());
+    }
+
     #[cfg(target_os = "windows")]
     for (name, file) in [
         ("Segoe UI", "segoeui.ttf"),
@@ -204,6 +216,9 @@ fn install_windows_font(fonts: &mut FontDefinitions, family_name: &str, file_nam
     let mut family = vec![font_name];
     if let Some(fallbacks) = fonts.families.get(&FontFamily::Proportional) {
         family.extend(fallbacks.iter().cloned());
+    }
+    if !family.contains(&"phosphor".to_owned()) {
+        family.push("phosphor".to_owned());
     }
     fonts
         .families
