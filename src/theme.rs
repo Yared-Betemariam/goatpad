@@ -1,7 +1,22 @@
 use crate::{paths::AppPaths, persistence::atomic_write};
+#[cfg(target_os = "windows")]
+use egui::FontData;
 use egui::{Color32, FontDefinitions, FontFamily, Visuals};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+#[cfg(target_os = "windows")]
+use std::sync::Arc;
 use std::{fs, io, path::PathBuf};
+
+pub const FONT_OPTIONS: &[&str] = &[
+    "Segoe UI",
+    "Sans",
+    "Georgia",
+    "Cambria",
+    "Times New Roman",
+    "Arial",
+    "Consolas",
+    "Monospace",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThemeColor(pub Color32);
@@ -59,7 +74,7 @@ impl Theme {
             primary: ThemeColor::rgb(111, 168, 255),
             secondary: ThemeColor::rgb(132, 205, 150),
             background: ThemeColor::rgb(28, 30, 34),
-            font_family: "Sans".to_owned(),
+            font_family: "Segoe UI".to_owned(),
             font_size: 16.0,
         }
     }
@@ -70,7 +85,7 @@ impl Theme {
             primary: ThemeColor::rgb(50, 100, 190),
             secondary: ThemeColor::rgb(42, 125, 83),
             background: ThemeColor::rgb(248, 249, 251),
-            font_family: "Sans".to_owned(),
+            font_family: "Segoe UI".to_owned(),
             font_size: 16.0,
         }
     }
@@ -78,15 +93,54 @@ impl Theme {
     pub fn font_family(&self) -> FontFamily {
         match self.font_family.as_str() {
             "Monospace" => FontFamily::Monospace,
-            _ => FontFamily::Proportional,
+            "Sans" => FontFamily::Proportional,
+            name => FontFamily::Name(name.into()),
         }
     }
 }
 
-/// Configure the two curated families supplied by egui itself. They are embedded
-/// in the binary by egui, so Goatpad has no runtime font-file dependency.
+/// Installs Windows' included writing fonts while retaining egui's embedded
+/// fonts as fallbacks for characters unavailable in the selected face.
 pub fn install_fonts(ctx: &egui::Context) {
-    ctx.set_fonts(FontDefinitions::default());
+    let mut fonts = FontDefinitions::default();
+
+    #[cfg(target_os = "windows")]
+    for (name, file) in [
+        ("Segoe UI", "segoeui.ttf"),
+        ("Georgia", "georgia.ttf"),
+        ("Cambria", "cambria.ttc"),
+        ("Times New Roman", "times.ttf"),
+        ("Arial", "arial.ttf"),
+        ("Consolas", "consola.ttf"),
+    ] {
+        install_windows_font(&mut fonts, name, file);
+    }
+
+    ctx.set_fonts(fonts);
+}
+
+#[cfg(target_os = "windows")]
+fn install_windows_font(fonts: &mut FontDefinitions, family_name: &str, file_name: &str) {
+    let fonts_directory = std::env::var_os("WINDIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
+        .join("Fonts");
+    let Ok(data) = fs::read(fonts_directory.join(file_name)) else {
+        return;
+    };
+
+    let font_name = format!("goatpad-{}", family_name.to_ascii_lowercase());
+    fonts
+        .font_data
+        .insert(font_name.clone(), Arc::new(FontData::from_owned(data)));
+
+    let mut family = vec![font_name];
+    if let Some(fallbacks) = fonts.families.get(&FontFamily::Proportional) {
+        family.extend(fallbacks.iter().cloned());
+    }
+    fonts
+        .families
+        .insert(FontFamily::Name(family_name.into()), family);
 }
 
 pub fn apply_theme(ctx: &egui::Context, theme: &Theme) {

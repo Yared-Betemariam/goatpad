@@ -24,7 +24,9 @@ use paths::AppPaths;
 use persistence::{SaveRequest, SaveResult, start_writer_thread};
 use session::{Session, TabState, WindowGeom};
 use settings::Settings;
-use theme::{Theme, apply_theme, ensure_default_themes, install_fonts, load_themes, save_theme};
+use theme::{
+    FONT_OPTIONS, Theme, apply_theme, ensure_default_themes, install_fonts, load_themes, save_theme,
+};
 use workspace::Workspace;
 
 const TITLE_BAR_HEIGHT: f32 = 40.0;
@@ -1449,13 +1451,14 @@ impl eframe::App for GoatpadApp {
             });
             ui.separator();
             let zoom = self.zoom;
+            let font_family = self.theme_draft.font_family();
             let editor_id = self.editor_id();
             let mut layouter =
                 move |ui: &egui::Ui, buffer: &dyn egui::TextBuffer, wrap_width: f32| {
                     let mut job = if is_markdown {
-                        highlighting::highlight(buffer.as_str(), zoom)
+                        highlighting::highlight(buffer.as_str(), zoom, &font_family)
                     } else {
-                        highlighting::plain(buffer.as_str(), zoom)
+                        highlighting::plain(buffer.as_str(), zoom, &font_family)
                     };
                     job.wrap.max_width = wrap_width;
                     ui.fonts_mut(|fonts| fonts.layout_job(job))
@@ -1467,6 +1470,7 @@ impl eframe::App for GoatpadApp {
                     egui::TextEdit::multiline(&mut self.workspace.active_document_mut().content)
                         .id(editor_id)
                         .desired_width(f32::INFINITY)
+                        .frame(egui::Frame::NONE)
                         .layouter(&mut layouter)
                         .show(ui)
                 });
@@ -1560,16 +1564,13 @@ impl eframe::App for GoatpadApp {
                     changed |= egui::ComboBox::from_label("Font")
                         .selected_text(&self.theme_draft.font_family)
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.theme_draft.font_family,
-                                "Sans".to_owned(),
-                                "Sans",
-                            );
-                            ui.selectable_value(
-                                &mut self.theme_draft.font_family,
-                                "Monospace".to_owned(),
-                                "Monospace",
-                            );
+                            for font in FONT_OPTIONS {
+                                ui.selectable_value(
+                                    &mut self.theme_draft.font_family,
+                                    (*font).to_owned(),
+                                    *font,
+                                );
+                            }
                         })
                         .response
                         .changed();

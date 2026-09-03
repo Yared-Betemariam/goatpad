@@ -14,7 +14,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 - A Notepad-style status bar with cursor position, character count, document type, zoom control, line-ending, and encoding
 - Automatic background saving
 - Workspace and window restoration between launches
-- Custom light and dark themes
+- Custom light and dark themes, including selectable Windows writing fonts
 - Configurable keyboard shortcuts
 - Local storage with no account or cloud service required
 
@@ -106,6 +106,10 @@ Formatting shortcuts only apply to Markdown notes. Shortcuts can be changed from
 ## The Markdown formatting toolbar
 
 Markdown notes show a toolbar above the editor, mirroring Notepad's Markdown view: a heading dropdown (H1-H3), a list dropdown (bulleted/numbered), bold, italic, strikethrough, link, table, and clear-formatting buttons. Plain-text notes hide these tools since Markdown syntax does not apply. The `MD`/`TXT` switch at the right of the toolbar (also available under the `View` menu) changes a note's type at any time.
+
+## Fonts
+
+The Theme section of Settings includes Segoe UI (the standard Windows 11 application font), Georgia, Cambria, Times New Roman, Arial, Consolas, and the built-in Sans and Monospace choices. Font selection is saved with each theme. The document editor intentionally has no focus or active border.
 
 ## Note titles
 
