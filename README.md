@@ -1,137 +1,102 @@
 # Goatpad
 
-Goatpad is a lightweight, native Windows-first editor for Markdown and plain-text notes. It is built with Rust and [egui](https://github.com/emilk/egui), keeps documents local, and restores your workspace between launches.
+Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is built with Rust and egui, designed primarily for Windows, and keeps your notes stored locally.
 
-## Highlights
+## Features
 
-- Markdown and plain-text documents in persistent tabs
-- Live Markdown highlighting for headings, emphasis, strong text, code, links, and lists
-- Markdown formatting actions for bold, italic, underline, and bullet lists
-- Automatic, atomic document saves in the background
-- Workspace restoration, including the active tab, cursor position, scroll position, and window geometry
-- Customizable light and dark themes with color, font-family, and font-size controls
+- Markdown and plain-text editing in persistent tabs
+- Live Markdown highlighting and common formatting actions
+- Automatic background saving
+- Workspace and window restoration between launches
+- Custom light and dark themes
 - Configurable keyboard shortcuts
-- Portable Windows executable with no installer required
-- In-app notifications for document, workspace, settings, and theme errors
+- Local storage with no account or cloud service required
 
 ## Requirements
 
-- Windows is the primary supported platform and release packaging target.
-- [Rust](https://www.rust-lang.org/tools/install) with Cargo and a current stable toolchain.
-- A Windows C/C++ build environment suitable for compiling Rust desktop dependencies. Visual Studio Build Tools with the Desktop development with C++ workload is a common option.
+- 64-bit Windows
+- A current stable Rust toolchain with Cargo
+- A Windows C/C++ build environment, such as Visual Studio Build Tools
+- The .NET SDK and WiX Toolset 7 when building an MSI installer
 
-The application uses egui's bundled font definitions, so it has no runtime dependency on font files.
+Install WiX once with:
 
-## Build and run
+```powershell
+dotnet tool install --global wix --version 7.0.0
+```
 
-From the repository root:
+## Run locally
+
+Clone the repository, open a terminal in the project directory, and run:
 
 ```powershell
 cargo run
 ```
 
-For a release build:
+To create an optimized build:
 
 ```powershell
 cargo build --release
 ```
 
-The release executable is created at:
+The executable will be available at:
 
 ```text
 target\release\goatpad.exe
 ```
 
-Goatpad is portable. Copy `goatpad.exe` to any folder and run it; no installer or additional runtime files are required. User data is stored separately in the Windows application-data directory, so moving the executable does not move or delete your notes.
+The release executable is portable and can be run without an installer.
 
-## Using Goatpad
+## Build the MSI installer
 
-### Documents and tabs
+Run the packaging script from the project directory:
 
-- A new installation starts with one persisted `Untitled` Markdown tab.
-- Use the `+` button or `Ctrl+T` to create a tab.
-- Click a tab to switch documents. The active document name is shown in the window title.
-- Use the `×` button or `Ctrl+Shift+W` to delete a tab. Deleting a tab permanently removes its local content file; the final remaining tab cannot be deleted.
-- Use the `MD` and `TXT` controls to change the active document type. The content is retained while the underlying file changes between `.md` and `.txt`.
-- The footer shows the current line, column, and character count.
+```powershell
+.\build-msi.cmd
+```
 
-Markdown formatting shortcuts only modify Markdown documents. When no text is selected, wrapping actions place the cursor inside the new markers; when text is selected, the selection is wrapped.
+The script builds the latest release executable, prepares the required WiX extension, and creates:
 
-### Default keyboard shortcuts
+```text
+dist\Goatpad-<version>-x64.msi
+```
 
-| Action       | Shortcut         |
-| ------------ | ---------------- |
-| Bold         | `Ctrl+B`         |
-| Italic       | `Ctrl+I`         |
-| Underline    | `Ctrl+U`         |
-| Bullet list  | `Ctrl+Shift+8`   |
-| New tab      | `Ctrl+T`         |
-| Delete tab   | `Ctrl+Shift+W`   |
-| Next tab     | `Ctrl+Tab`       |
-| Previous tab | `Ctrl+Shift+Tab` |
-| Settings     | `Ctrl+,`         |
+The version is read from `Cargo.toml`. To build the MSI and immediately open Windows Installer, run:
 
-Shortcuts can be changed in **Settings**. Click a shortcut, then press the replacement key combination. Invalid saved bindings are ignored and missing actions are restored to their defaults.
+```powershell
+.\build-msi.cmd --install
+```
 
-### Themes and settings
+The installer adds Goatpad to the Start menu and desktop, and installs it under `Program Files`. Rebuilding and installing the MSI replaces the existing installation even when the version is unchanged, so local development builds can be reinstalled directly. For identifiable releases, update the package version in `Cargo.toml` before building.
 
-Open **Settings** with the gear button or `Ctrl+,`.
+Close Goatpad before upgrading. Uninstalling or upgrading the application does not remove documents or settings from `%LOCALAPPDATA%\Goatpad`.
 
-- Choose the built-in `default-dark` or `default-light` theme.
-- Adjust primary, secondary, and background colors.
-- Choose the `Sans` or `Monospace` font family.
-- Set the font size from 12 to 24.
-- Save the current design as a custom theme.
-- Rebind any application shortcut.
+## Keyboard shortcuts
 
-The selected theme and shortcut changes are saved automatically. Color, font, and size edits are applied immediately as a draft; save them with **Save new theme** if you want to keep them after restarting. These values are stored in the local settings and theme files described below.
+| Action                    | Shortcut                       |
+| ------------------------- | ------------------------------ |
+| New tab                   | `Ctrl+T`                       |
+| Delete tab                | `Ctrl+Shift+W`                 |
+| Next tab                  | `Ctrl+Tab`                     |
+| Previous tab              | `Ctrl+Shift+Tab`               |
+| Settings                  | `Ctrl+,`                       |
+| Bold / Italic / Underline | `Ctrl+B` / `Ctrl+I` / `Ctrl+U` |
 
-## Saving and recovery
+Shortcuts can be changed from the application settings.
 
-Goatpad saves document changes automatically:
+## Local data
 
-- Normal edits are saved after 400 ms without another edit.
-- A dirty document is saved no later than 2 seconds after the first edit, even during continuous typing.
-- Switching tabs, changing document type, creating or deleting a tab, and exiting the application flush pending changes immediately.
-- Writes are performed through a temporary file and rename, reducing the chance of leaving a partially written document behind.
-
-The workspace and session are also saved automatically. On the next launch Goatpad restores the tab list, active tab, cursor and scroll state, and window position and size. If a document file cannot be read, Goatpad keeps the workspace entry, opens that document with empty content, and displays a warning without overwriting the unreadable file.
-
-## Local data layout
-
-On Windows, Goatpad uses the local application-data directory, normally:
+Goatpad stores documents, settings, themes, and session data in the Windows application-data directory, normally:
 
 ```text
 %LOCALAPPDATA%\Goatpad
 ```
 
-The exact base path is provided by the operating system through the `directories` crate. Goatpad creates the following layout:
-
-```text
-Goatpad\
-├── documents\
-│   ├── <document-uuid>.md
-│   └── <document-uuid>.txt
-├── themes\
-│   ├── default-dark.json
-│   ├── default-light.json
-│   └── <custom-theme>.json
-├── settings.json
-├── session.json
-└── workspace.json
-```
-
-- `documents` contains the actual Markdown and text content.
-- `workspace.json` stores the tab index, titles, document IDs, and document types.
-- `session.json` stores the active tab, per-tab cursor and scroll state, and window geometry.
-- `settings.json` stores the selected theme and keyboard shortcuts.
-- `themes` stores built-in presets and custom theme definitions.
-
-These are ordinary local files and are not synchronized or backed up by Goatpad. Back up the `Goatpad` directory if you need to preserve the application workspace.
+Data is not synchronized or backed up automatically. Back up this directory if you want to preserve your workspace.
 
 ## Development
 
-Useful Cargo commands are:
+Useful commands:
 
 ```powershell
 cargo check
@@ -139,36 +104,7 @@ cargo test
 cargo fmt -- --check
 ```
 
-To format the source code:
-
-```powershell
-cargo fmt
-```
-
-The Windows icon is compiled into the executable by `build.rs` from `assets\goatpad.ico`. To regenerate that icon using the included PowerShell script:
-
-```powershell
-.\tools\generate_icon.ps1
-```
-
-## Project layout
-
-```text
-src\
-├── main.rs          Application UI, editor behavior, and lifecycle
-├── document.rs      Document types and Markdown/text metadata
-├── highlighting.rs  Live Markdown and plain-text layout
-├── hotkeys.rs       Actions, shortcut parsing, and defaults
-├── paths.rs         Application-data paths
-├── persistence.rs   Atomic writes and background save worker
-├── session.rs       Window, tab, cursor, and scroll restoration
-├── settings.rs      Theme and shortcut settings persistence
-├── theme.rs         Theme definitions and egui styling
-└── workspace.rs     Tab index and document management
-```
-
 ## Current limitations
 
-- There is no import/export or file-picker workflow yet; documents are managed inside Goatpad's local workspace.
-- Release distribution is currently a portable `.exe`, not an MSI or other installer package.
-- Windows is the primary supported and packaged platform.
+- Import and export workflows are not yet available
+- MSI packaging currently targets 64-bit Windows

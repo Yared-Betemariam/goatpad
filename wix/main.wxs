@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package
+    Name="Goatpad"
+    Manufacturer="Goatpad"
+    Version="$(ProductVersion)"
+    UpgradeCode="abf1c5ab-089a-4df6-8914-8d925f4423f5"
+    Scope="perMachine"
+    Compressed="yes">
+
+    <MajorUpgrade
+      AllowSameVersionUpgrades="yes"
+      DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Goatpad">
+        <Component Id="MainExecutable" Guid="ccf0dd24-e8f9-41eb-b8b5-320ea3d9d168">
+          <File Id="GoatpadEXE" Source="target\release\goatpad.exe" KeyPath="yes">
+            <Shortcut
+              Id="StartMenuShortcut"
+              Directory="ProgramMenuFolder"
+              Name="Goatpad"
+              WorkingDirectory="INSTALLFOLDER"
+              Icon="GoatpadIcon"
+              Advertise="yes" />
+            <Shortcut
+              Id="DesktopShortcut"
+              Directory="DesktopFolder"
+              Name="Goatpad"
+              WorkingDirectory="INSTALLFOLDER"
+              Icon="GoatpadIcon"
+              Advertise="yes" />
+          </File>
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Icon Id="GoatpadIcon" SourceFile="assets\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="GoatpadIcon" />
+
+    <Feature Id="MainFeature" Title="Goatpad" Level="1">
+      <ComponentRef Id="MainExecutable" />
+    </Feature>
+
+    <ui:WixUI Id="WixUI_Minimal" />
+
+  </Package>
+</Wix>
