@@ -33,6 +33,9 @@ const WINDOW_BUTTON_WIDTH: f32 = 46.0;
 const MIN_DRAG_WIDTH: f32 = 48.0;
 const RESIZE_BORDER_WIDTH: f32 = 5.0;
 const RESIZE_CORNER_SIZE: f32 = 14.0;
+const APP_ICON_SIZE: usize = 64;
+const APP_ICON_RGBA: &[u8; APP_ICON_SIZE * APP_ICON_SIZE * 4] =
+    include_bytes!("../assets/icon.rgba");
 
 #[derive(Clone, Copy)]
 enum ToastKind {
@@ -47,6 +50,7 @@ struct Toast {
 }
 
 struct GoatpadApp {
+    app_icon_texture: egui::TextureHandle,
     workspace: Workspace,
     paths: AppPaths,
     session: Session,
@@ -106,7 +110,13 @@ impl GoatpadApp {
         };
         session.save(&paths)?;
         let (writer, writer_results) = start_writer_thread();
+        let app_icon_texture = ctx.load_texture(
+            "goatpad-app-icon",
+            egui::ColorImage::from_rgba_unmultiplied([APP_ICON_SIZE, APP_ICON_SIZE], APP_ICON_RGBA),
+            egui::TextureOptions::LINEAR,
+        );
         Ok(Self {
+            app_icon_texture,
             workspace,
             paths,
             session,
@@ -706,6 +716,7 @@ fn cursor_position(content: &str, cursor_offset: usize) -> (usize, usize) {
 
 fn show_app_icon_menu(
     ui: &mut egui::Ui,
+    app_icon_texture: &egui::TextureHandle,
     requested_import: &mut bool,
     requested_export: &mut bool,
     settings_open: &mut bool,
@@ -723,22 +734,13 @@ fn show_app_icon_menu(
         ui.painter().rect_filled(rect, 0.0, fill);
     }
 
-    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(20.0, 22.0));
-    ui.painter()
-        .rect_filled(icon_rect, 2.0, egui::Color32::from_rgb(28, 52, 40));
-    let page_rect = icon_rect.shrink2(egui::vec2(3.0, 2.0));
-    ui.painter()
-        .rect_filled(page_rect, 1.0, egui::Color32::from_rgb(107, 193, 123));
-    for offset in [6.0, 10.0, 14.0] {
-        let right_padding = if offset == 14.0 { 5.0 } else { 2.0 };
-        ui.painter().line_segment(
-            [
-                egui::pos2(page_rect.left() + 2.0, page_rect.top() + offset),
-                egui::pos2(page_rect.right() - right_padding, page_rect.top() + offset),
-            ],
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(231, 255, 235)),
-        );
-    }
+    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(22.0));
+    ui.painter().image(
+        app_icon_texture.id(),
+        icon_rect,
+        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+        egui::Color32::WHITE,
+    );
 
     let response = response.on_hover_text("Goatpad menu");
     egui::Popup::menu(&response).show(|ui| {
@@ -903,30 +905,10 @@ fn show_resize_handles(ctx: &egui::Context) {
 }
 
 fn goatpad_icon() -> egui::IconData {
-    const SIZE: usize = 64;
-    let mut rgba = vec![0_u8; SIZE * SIZE * 4];
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let pixel = (y * SIZE + x) * 4;
-            let inside_page = (7..57).contains(&x) && (6..59).contains(&y);
-            let (red, green, blue) = if inside_page {
-                (107, 193, 123)
-            } else {
-                (28, 52, 40)
-            };
-            rgba[pixel..pixel + 4].copy_from_slice(&[red, green, blue, 255]);
-        }
-    }
-    for y in [20_usize, 32, 44] {
-        for x in 19..if y == 44 { 43 } else { 48 } {
-            let pixel = (y * SIZE + x) * 4;
-            rgba[pixel..pixel + 4].copy_from_slice(&[231, 255, 235, 255]);
-        }
-    }
     egui::IconData {
-        rgba,
-        width: SIZE as u32,
-        height: SIZE as u32,
+        rgba: APP_ICON_RGBA.to_vec(),
+        width: APP_ICON_SIZE as u32,
+        height: APP_ICON_SIZE as u32,
     }
 }
 
@@ -965,6 +947,7 @@ impl eframe::App for GoatpadApp {
                     ui.set_height(TITLE_BAR_HEIGHT);
                     show_app_icon_menu(
                         ui,
+                        &self.app_icon_texture,
                         &mut requested_import,
                         &mut requested_export,
                         &mut self.settings_open,

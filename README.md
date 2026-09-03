@@ -50,6 +50,16 @@ target\release\goatpad.exe
 
 The release executable is portable and can be run without an installer.
 
+## Update the application icon
+
+`assets/raw-icon.png` is the single source image for Goatpad's application icon. Replace that file with any PNG you want to use, then run a normal Cargo command such as:
+
+```powershell
+cargo build
+```
+
+The build automatically centers the image without changing its aspect ratio, regenerates the multi-resolution `assets/icon.ico` and runtime `assets/icon.rgba`, embeds the icon in the Windows executable, and updates the window and title-bar icons. The MSI installer also uses the generated `.ico` file. A square PNG with transparency and a high resolution (at least 256×256) produces the best results.
+
 ## Build the MSI installer
 
 Run the packaging script from the project directory:
