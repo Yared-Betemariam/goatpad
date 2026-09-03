@@ -2026,7 +2026,11 @@ impl eframe::App for GoatpadApp {
                 let is_markdown = self.workspace.active_document().kind == DocKind::Md;
                 let zoom = self.zoom;
                 let font_family = self.theme_draft.content_font_family();
-                let text_color = ui.visuals().text_color();
+                let text_color = if ui.visuals().dark_mode {
+                    egui::Color32::WHITE
+                } else {
+                    egui::Color32::BLACK
+                };
                 let editor_id = self.editor_id();
                 let mut layouter =
                     move |ui: &egui::Ui, buffer: &dyn egui::TextBuffer, wrap_width: f32| {

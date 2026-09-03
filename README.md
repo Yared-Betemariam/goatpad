@@ -118,6 +118,8 @@ The tabbed Settings window (`Ctrl+,`) contains two main tabs:
 - **Themes**: View built-in (`Dark` and `Light`) and custom themes. Built-in themes are protected; you can duplicate any theme to create a new custom palette. Custom themes can be renamed, edited, applied, or deleted. Editing options include primary, secondary, and background colors, font sizing, and independent font family selection.
 - **Keyboard**: Rebind any of the application hotkeys by clicking an action and pressing the replacement key combination.
 
+The main document editor uses pure white text for dark themes and pure black text for light themes.
+
 ## Fonts
 
 Each theme stores two independent font settings:
