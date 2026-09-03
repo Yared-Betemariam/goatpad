@@ -1,5 +1,5 @@
 use crate::{
-    document::{DocKind, Document},
+    document::{DocKind, Document, unix_timestamp_millis},
     paths::AppPaths,
     persistence::atomic_write,
 };
@@ -23,6 +23,8 @@ pub struct TabEntry {
     #[serde(default)]
     pub title_is_custom: bool,
     pub kind: DocKind,
+    #[serde(default)]
+    pub last_opened_at: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -38,6 +40,8 @@ struct ArchivedNote {
     title_is_custom: bool,
     kind: DocKind,
     content: String,
+    #[serde(default)]
+    last_opened_at: u64,
 }
 
 #[derive(Debug)]
@@ -64,12 +68,6 @@ impl Workspace {
 
         let index: WorkspaceIndex = serde_json::from_slice(&fs::read(paths.workspace_path())?)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        if index.tabs.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "workspace has no documents",
-            ));
-        }
         let mut warnings = Vec::new();
         let documents = index
             .tabs
@@ -95,6 +93,7 @@ impl Workspace {
                     title_is_custom: entry.title_is_custom,
                     kind: entry.kind,
                     content,
+                    last_opened_at: entry.last_opened_at,
                     dirty: false,
                 };
                 document.refresh_automatic_title();
@@ -129,18 +128,31 @@ impl Workspace {
         }
     }
 
-    pub fn new_tab(&mut self) -> io::Result<()> {
-        let document = Document::new_untitled();
-        self.save_document(&document)?;
-        self.documents.push(document);
-        self.active = self.documents.len() - 1;
+    pub fn document(&self, id: Uuid) -> Option<&Document> {
+        self.documents.iter().find(|document| document.id == id)
+    }
+
+    pub fn touch_document(&mut self, id: Uuid) -> io::Result<()> {
+        let document = self
+            .documents
+            .iter_mut()
+            .find(|document| document.id == id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "document not found"))?;
+        document.last_opened_at = unix_timestamp_millis();
         self.save_index()
     }
 
-    pub fn delete_tab(&mut self, id: Uuid) -> io::Result<bool> {
-        if self.documents.len() == 1 {
-            return Ok(false);
-        }
+    pub fn new_tab(&mut self) -> io::Result<Uuid> {
+        let document = Document::new_untitled();
+        let id = document.id;
+        self.save_document(&document)?;
+        self.documents.push(document);
+        self.active = self.documents.len() - 1;
+        self.save_index()?;
+        Ok(id)
+    }
+
+    pub fn delete_note(&mut self, id: Uuid) -> io::Result<bool> {
         let Some(index) = self.documents.iter().position(|document| document.id == id) else {
             return Ok(false);
         };
@@ -149,7 +161,9 @@ impl Workspace {
         if path.exists() {
             fs::remove_file(path)?;
         }
-        if self.active >= self.documents.len() {
+        if self.documents.is_empty() {
+            self.active = 0;
+        } else if self.active >= self.documents.len() {
             self.active = self.documents.len() - 1;
         } else if index < self.active {
             self.active -= 1;
@@ -169,6 +183,7 @@ impl Workspace {
                     title: document.title.clone(),
                     title_is_custom: document.title_is_custom,
                     kind: document.kind,
+                    last_opened_at: document.last_opened_at,
                 })
                 .collect(),
         };
@@ -205,6 +220,7 @@ impl Workspace {
                     title_is_custom: document.title_is_custom,
                     kind: document.kind,
                     content: document.content.clone(),
+                    last_opened_at: document.last_opened_at,
                 })
                 .collect(),
         };
@@ -240,6 +256,7 @@ impl Workspace {
                     title_is_custom,
                     kind: note.kind,
                     content: note.content,
+                    last_opened_at: note.last_opened_at,
                     dirty: false,
                 };
                 document.refresh_automatic_title();
@@ -258,14 +275,11 @@ impl Workspace {
             written_paths.push(self.document_path(document.id, document.kind));
         }
 
-        let previous_active = self.active;
         let first_imported = self.documents.len();
         let imported_count = documents.len();
         self.documents.extend(documents);
-        self.active = first_imported;
         if let Err(error) = self.save_index() {
             self.documents.truncate(first_imported);
-            self.active = previous_active;
             for path in written_paths {
                 let _ = fs::remove_file(path);
             }
@@ -428,8 +442,10 @@ mod tests {
         source.export_notes(&archive_path).unwrap();
 
         let (mut target, _) = Workspace::load(target_paths.clone()).unwrap();
+        let target_active_id = target.active_document().id;
         assert_eq!(target.import_notes(&archive_path).unwrap(), 2);
 
+        assert_eq!(target.active_document().id, target_active_id);
         assert_eq!(target.documents.len(), 3);
         assert_eq!(target.documents[1].title, "Automatic name");
         assert!(!target.documents[1].title_is_custom);
@@ -448,5 +464,22 @@ mod tests {
 
         fs::remove_dir_all(source_directory).unwrap();
         fs::remove_dir_all(target_directory).unwrap();
+    }
+
+    #[test]
+    fn deleting_the_last_note_leaves_a_valid_empty_workspace() {
+        let directory =
+            std::env::temp_dir().join(format!("goatpad-delete-test-{}", uuid::Uuid::new_v4()));
+        let paths = AppPaths::for_test(directory.clone()).unwrap();
+        let (mut workspace, _) = Workspace::load(paths.clone()).unwrap();
+        let id = workspace.active_document().id;
+
+        assert!(workspace.delete_note(id).unwrap());
+        assert!(workspace.documents.is_empty());
+        let (reloaded, warnings) = Workspace::load(paths).unwrap();
+        assert!(warnings.is_empty());
+        assert!(reloaded.documents.is_empty());
+
+        fs::remove_dir_all(directory).unwrap();
     }
 }

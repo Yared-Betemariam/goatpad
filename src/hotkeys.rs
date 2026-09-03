@@ -9,7 +9,8 @@ pub enum Action {
     ToggleUnderline,
     ToggleBulletList,
     NewTab,
-    DeleteTab,
+    #[serde(alias = "DeleteTab")]
+    CloseTab,
     NextTab,
     PreviousTab,
     OpenSettings,
@@ -22,7 +23,7 @@ impl Action {
         Self::ToggleUnderline,
         Self::ToggleBulletList,
         Self::NewTab,
-        Self::DeleteTab,
+        Self::CloseTab,
         Self::NextTab,
         Self::PreviousTab,
         Self::OpenSettings,
@@ -35,7 +36,7 @@ impl Action {
             Self::ToggleUnderline => "Underline",
             Self::ToggleBulletList => "Bullet list",
             Self::NewTab => "New tab",
-            Self::DeleteTab => "Delete tab",
+            Self::CloseTab => "Close tab",
             Self::NextTab => "Next tab",
             Self::PreviousTab => "Previous tab",
             Self::OpenSettings => "Settings",
@@ -140,7 +141,7 @@ pub fn default_bindings() -> HashMap<Action, Keybinding> {
         ),
         (Action::NewTab, Keybinding::new(Key::T, Modifiers::CTRL)),
         (
-            Action::DeleteTab,
+            Action::CloseTab,
             Keybinding::new(
                 Key::W,
                 Modifiers {

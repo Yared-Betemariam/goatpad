@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -28,6 +29,7 @@ pub struct Document {
     pub title_is_custom: bool,
     pub kind: DocKind,
     pub content: String,
+    pub last_opened_at: u64,
     pub dirty: bool,
 }
 
@@ -39,6 +41,7 @@ impl Document {
             title_is_custom: false,
             kind: DocKind::Md,
             content: String::new(),
+            last_opened_at: unix_timestamp_millis(),
             dirty: false,
         }
     }
@@ -65,6 +68,15 @@ impl Document {
             self.title = title.to_owned();
         }
     }
+}
+
+pub fn unix_timestamp_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX)
 }
 
 pub fn automatic_title(content: &str) -> String {

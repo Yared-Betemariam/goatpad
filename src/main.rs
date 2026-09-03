@@ -51,6 +51,8 @@ struct GoatpadApp {
     dirty_since: Option<Instant>,
     last_session_save: Instant,
     delete_confirmation: Option<Uuid>,
+    tabs_list_open: bool,
+    tabs_list_search: String,
     settings: Settings,
     settings_open: bool,
     rebinding: Option<Action>,
@@ -78,16 +80,24 @@ impl GoatpadApp {
             .unwrap_or_else(Theme::default_dark);
         install_fonts(ctx);
         apply_theme(ctx, &theme_draft);
-        if let Some(active_tab) = session.active_tab {
-            workspace.set_active_by_id(active_tab);
-        }
-        let active_id = workspace.active_document().id;
-        let state = session
-            .tab_state
-            .get(&active_id)
-            .copied()
-            .unwrap_or_default();
-        session.active_tab = Some(active_id);
+        let note_ids = workspace
+            .documents
+            .iter()
+            .map(|document| document.id)
+            .collect::<Vec<_>>();
+        session.prepare_open_tabs(&note_ids);
+        let state = if let Some(active_id) = session.active_tab {
+            workspace.set_active_by_id(active_id);
+            workspace.touch_document(active_id)?;
+            session
+                .tab_state
+                .get(&active_id)
+                .copied()
+                .unwrap_or_default()
+        } else {
+            TabState::default()
+        };
+        session.save(&paths)?;
         let (writer, writer_results) = start_writer_thread();
         Ok(Self {
             workspace,
@@ -102,6 +112,8 @@ impl GoatpadApp {
             dirty_since: None,
             last_session_save: Instant::now(),
             delete_confirmation: None,
+            tabs_list_open: false,
+            tabs_list_search: String::new(),
             settings,
             settings_open: false,
             rebinding: None,
@@ -165,7 +177,14 @@ impl GoatpadApp {
     }
 
     fn update_window_title(&mut self, ctx: &egui::Context) {
-        let title = window_title(&self.workspace.active_document().title);
+        let title = self
+            .session
+            .active_tab
+            .and_then(|id| self.workspace.document(id))
+            .map_or_else(
+                || "Goatpad".to_owned(),
+                |document| window_title(&document.title),
+            );
         if title != self.last_window_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.last_window_title = title;
@@ -302,11 +321,6 @@ impl GoatpadApp {
         self.flush_all_now();
         match self.workspace.import_notes(&path) {
             Ok(count) => {
-                self.cursor_offset = 0;
-                self.scroll_offset = 0.0;
-                self.restore_cursor = true;
-                self.last_edit = None;
-                self.dirty_since = None;
                 self.workspace_index_dirty = false;
                 self.save_session();
                 self.report_success(format!("Imported {count} notes from {}", path.display()));
@@ -316,7 +330,12 @@ impl GoatpadApp {
     }
 
     fn queue_active_save(&mut self) {
-        let document = self.workspace.active_document();
+        let Some(active_id) = self.session.active_tab else {
+            return;
+        };
+        let Some(document) = self.workspace.document(active_id) else {
+            return;
+        };
         if !document.dirty {
             return;
         }
@@ -335,7 +354,19 @@ impl GoatpadApp {
     }
 
     fn flush_active_now(&mut self) {
-        let index = self.workspace.active;
+        let Some(active_id) = self.session.active_tab else {
+            self.flush_workspace_index();
+            return;
+        };
+        let Some(index) = self
+            .workspace
+            .documents
+            .iter()
+            .position(|document| document.id == active_id)
+        else {
+            self.flush_workspace_index();
+            return;
+        };
         if self.workspace.documents[index].dirty {
             if let Err(error) = self
                 .workspace
@@ -366,8 +397,9 @@ impl GoatpadApp {
     }
 
     fn capture_active_tab_state(&mut self) {
-        let id = self.workspace.active_document().id;
-        self.session.active_tab = Some(id);
+        let Some(id) = self.session.active_tab else {
+            return;
+        };
         self.session.tab_state.insert(
             id,
             TabState {
@@ -377,22 +409,24 @@ impl GoatpadApp {
         );
     }
 
-    fn switch_to(&mut self, index: usize) {
-        if index == self.workspace.active {
+    fn activate_tab(&mut self, id: Uuid) {
+        if self.workspace.document(id).is_none() {
             return;
         }
         if self.renaming_document.is_some() {
             self.finish_rename();
         }
-        self.capture_active_tab_state();
-        self.flush_active_now();
-        self.workspace.active = index;
-        let state = self
-            .session
-            .tab_state
-            .get(&self.workspace.active_document().id)
-            .copied()
-            .unwrap_or_default();
+        let changed = self.session.active_tab != Some(id);
+        if changed {
+            self.capture_active_tab_state();
+            self.flush_active_now();
+        }
+        self.session.open_tab(id);
+        self.workspace.set_active_by_id(id);
+        if let Err(error) = self.workspace.touch_document(id) {
+            self.report_error(format!("Could not update note activity: {error}"));
+        }
+        let state = self.session.tab_state.get(&id).copied().unwrap_or_default();
         self.cursor_offset = state.cursor_offset;
         self.scroll_offset = state.scroll_offset;
         self.restore_cursor = true;
@@ -410,28 +444,56 @@ impl GoatpadApp {
         }
     }
 
-    fn delete_tab(&mut self, id: Uuid) {
-        if self.renaming_document.is_some() {
+    fn close_tab(&mut self, id: Uuid) {
+        if !self.session.open_tabs.contains(&id) {
+            return;
+        }
+        if self.renaming_document == Some(id) {
             self.finish_rename();
         }
-        self.capture_active_tab_state();
-        self.flush_active_now();
-        match self.workspace.delete_tab(id) {
-            Ok(true) => {
-                self.session.tab_state.remove(&id);
+        let was_active = self.session.active_tab == Some(id);
+        if was_active {
+            self.capture_active_tab_state();
+            self.flush_active_now();
+        }
+        self.session.close_tab(id);
+        if was_active {
+            if let Some(next_id) = self.session.active_tab {
+                self.workspace.set_active_by_id(next_id);
+                if let Err(error) = self.workspace.touch_document(next_id) {
+                    self.report_error(format!("Could not update note activity: {error}"));
+                }
                 let state = self
                     .session
                     .tab_state
-                    .get(&self.workspace.active_document().id)
+                    .get(&next_id)
                     .copied()
                     .unwrap_or_default();
                 self.cursor_offset = state.cursor_offset;
                 self.scroll_offset = state.scroll_offset;
                 self.restore_cursor = true;
+            } else {
+                self.cursor_offset = 0;
+                self.scroll_offset = 0.0;
+                self.restore_cursor = false;
+            }
+            self.last_edit = None;
+            self.dirty_since = None;
+        }
+        self.save_session();
+    }
+
+    fn delete_note(&mut self, id: Uuid) {
+        if self.session.open_tabs.contains(&id) {
+            self.close_tab(id);
+        }
+        match self.workspace.delete_note(id) {
+            Ok(true) => {
+                self.session.tab_state.remove(&id);
                 self.save_session();
             }
             Ok(false) => {}
-            Err(error) => self.report_error(format!("Could not delete tab: {error}")),
+            Err(error) => self.report_error(format!("Could not delete note: {error}")),
         }
     }
 
@@ -453,10 +515,14 @@ impl GoatpadApp {
         self.capture_active_tab_state();
         self.flush_active_now();
         match self.workspace.new_tab() {
-            Ok(()) => {
+            Ok(id) => {
+                self.session.open_tab(id);
+                self.workspace.set_active_by_id(id);
                 self.cursor_offset = 0;
                 self.scroll_offset = 0.0;
                 self.restore_cursor = true;
+                self.last_edit = None;
+                self.dirty_since = None;
                 self.save_session();
             }
             Err(error) => self.report_error(format!("Could not create tab: {error}")),
@@ -464,7 +530,12 @@ impl GoatpadApp {
     }
 
     fn editor_id(&self) -> egui::Id {
-        egui::Id::new(("editor", self.workspace.active_document().id))
+        egui::Id::new((
+            "editor",
+            self.session
+                .active_tab
+                .expect("editor requires an active tab"),
+        ))
     }
 
     fn dispatch_hotkeys(&mut self, ctx: &egui::Context) {
@@ -493,25 +564,33 @@ impl GoatpadApp {
         };
         match action {
             Action::NewTab => self.create_tab(),
-            Action::DeleteTab => {
-                self.delete_confirmation = Some(self.workspace.active_document().id)
+            Action::CloseTab => {
+                if let Some(id) = self.session.active_tab {
+                    self.close_tab(id);
+                }
             }
             Action::NextTab => {
-                let next = (self.workspace.active + 1) % self.workspace.documents.len();
-                self.switch_to(next);
+                let previous = self.session.active_tab;
+                if let Some(id) = self.session.cycle_tab(true) {
+                    self.session.active_tab = previous;
+                    self.activate_tab(id);
+                }
             }
             Action::PreviousTab => {
-                let previous = if self.workspace.active == 0 {
-                    self.workspace.documents.len() - 1
-                } else {
-                    self.workspace.active - 1
-                };
-                self.switch_to(previous);
+                let previous = self.session.active_tab;
+                if let Some(id) = self.session.cycle_tab(false) {
+                    self.session.active_tab = previous;
+                    self.activate_tab(id);
+                }
             }
             Action::OpenSettings => self.settings_open = !self.settings_open,
             action
                 if action.is_formatting()
-                    && self.workspace.active_document().kind == DocKind::Md =>
+                    && self
+                        .session
+                        .active_tab
+                        .and_then(|id| self.workspace.document(id))
+                        .is_some_and(|document| document.kind == DocKind::Md) =>
             {
                 self.apply_formatting(ctx, action);
             }
@@ -674,16 +753,20 @@ impl eframe::App for GoatpadApp {
         self.update_window_geometry(&ctx);
         self.dispatch_hotkeys(&ctx);
         let mut requested_switch = None;
+        let mut requested_close = None;
         let mut requested_rename = None;
         let mut requested_new_tab = false;
         let mut requested_import = false;
         let mut requested_export = false;
         let tabs = self
-            .workspace
-            .documents
+            .session
+            .open_tabs
             .iter()
-            .enumerate()
-            .map(|(index, document)| (index, document.id, document.title.clone()))
+            .filter_map(|id| {
+                self.workspace
+                    .document(*id)
+                    .map(|document| (*id, document.title.clone(), document.dirty))
+            })
             .collect::<Vec<_>>();
         egui::Panel::top("tab_bar").show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
@@ -698,30 +781,41 @@ impl eframe::App for GoatpadApp {
                     }
                 });
                 ui.separator();
-                for (index, id, title) in &tabs {
+                for (id, title, dirty) in &tabs {
+                    let label = if *dirty {
+                        format!("{title} •")
+                    } else {
+                        title.clone()
+                    };
                     let response = ui
-                        .selectable_label(*index == self.workspace.active, title)
+                        .selectable_label(self.session.active_tab == Some(*id), label)
                         .on_hover_text("Double-click to rename");
                     if response.clicked() {
-                        requested_switch = Some(*index);
+                        requested_switch = Some(*id);
                     }
                     if response.double_clicked() {
                         requested_rename = Some(*id);
                     }
-                    if ui.small_button("×").on_hover_text("Delete tab").clicked() {
-                        self.delete_confirmation = Some(*id);
+                    if ui.small_button("×").on_hover_text("Close tab").clicked() {
+                        requested_close = Some(*id);
                     }
                 }
                 if ui.button("+").on_hover_text("New tab").clicked() {
                     requested_new_tab = true;
+                }
+                if ui.button("⋯").on_hover_text("Tabs list").clicked() {
+                    self.tabs_list_open = !self.tabs_list_open;
                 }
                 if ui.button("⚙").on_hover_text("Settings").clicked() {
                     self.settings_open = true;
                 }
             });
         });
-        if let Some(index) = requested_switch {
-            self.switch_to(index);
+        if let Some(id) = requested_switch {
+            self.activate_tab(id);
+        }
+        if let Some(id) = requested_close {
+            self.close_tab(id);
         }
         if let Some(id) = requested_rename {
             self.begin_rename(id);
@@ -736,21 +830,116 @@ impl eframe::App for GoatpadApp {
             self.export_notes();
         }
 
-        let (line, column) = cursor_position(
-            &self.workspace.active_document().content,
-            self.cursor_offset,
-        );
-        let character_count = self.workspace.active_document().content.chars().count();
+        let mut requested_list_open = None;
+        let mut requested_list_delete = None;
+        if self.tabs_list_open {
+            let mut notes = self
+                .workspace
+                .documents
+                .iter()
+                .map(|document| {
+                    (
+                        document.id,
+                        document.title.clone(),
+                        document.last_opened_at,
+                        self.session.open_tabs.contains(&document.id),
+                    )
+                })
+                .collect::<Vec<_>>();
+            notes.sort_by(|left, right| right.2.cmp(&left.2));
+            let mut list_open = self.tabs_list_open;
+            egui::Window::new("Tabs list")
+                .open(&mut list_open)
+                .collapsible(false)
+                .resizable(true)
+                .default_width(360.0)
+                .show(&ctx, |ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.tabs_list_search)
+                            .hint_text("Search notes…")
+                            .desired_width(f32::INFINITY),
+                    );
+                    ui.separator();
+                    let query = self.tabs_list_search.trim().to_lowercase();
+                    egui::ScrollArea::vertical()
+                        .max_height(420.0)
+                        .show(ui, |ui| {
+                            for (id, title, _, is_open) in &notes {
+                                if !query.is_empty() && !title.to_lowercase().contains(&query) {
+                                    continue;
+                                }
+                                ui.horizontal(|ui| {
+                                    ui.label(if *is_open { "●" } else { " " }).on_hover_text(
+                                        if *is_open {
+                                            "Open in the tab bar"
+                                        } else {
+                                            "Not open"
+                                        },
+                                    );
+                                    if ui
+                                        .selectable_label(false, title)
+                                        .on_hover_text("Open note")
+                                        .clicked()
+                                    {
+                                        requested_list_open = Some(*id);
+                                    }
+                                    if ui
+                                        .small_button("🗑")
+                                        .on_hover_text("Delete note permanently")
+                                        .clicked()
+                                    {
+                                        requested_list_delete = Some(*id);
+                                    }
+                                });
+                            }
+                            if notes.is_empty() {
+                                ui.label("No notes saved.");
+                            }
+                        });
+                });
+            self.tabs_list_open = list_open;
+        }
+        if let Some(id) = requested_list_open {
+            self.tabs_list_open = false;
+            self.activate_tab(id);
+        }
+        if let Some(id) = requested_list_delete {
+            self.delete_confirmation = Some(id);
+        }
+
+        let editor_stats = self.session.active_tab.and_then(|id| {
+            self.workspace.document(id).map(|document| {
+                (
+                    cursor_position(&document.content, self.cursor_offset),
+                    document.content.chars().count(),
+                )
+            })
+        });
         egui::Panel::bottom("footer").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(format!("Ln {line}, Col {column}"));
-                ui.separator();
-                ui.label(format!("{character_count} chars"));
-            });
+            if let Some(((line, column), character_count)) = editor_stats {
+                ui.horizontal(|ui| {
+                    ui.label(format!("Ln {line}, Col {column}"));
+                    ui.separator();
+                    ui.label(format!("{character_count} chars"));
+                });
+            } else {
+                ui.label("No tab open");
+            }
         });
 
         egui::CentralPanel::default().show(ui, |ui| {
-            let document_id = self.workspace.active_document().id;
+            let Some(document_id) = self.session.active_tab else {
+                ui.centered_and_justified(|ui| {
+                    ui.label("No tabs open — create a new note, or pick one from the tabs list.");
+                });
+                return;
+            };
+            if !self.workspace.set_active_by_id(document_id) {
+                ui.centered_and_justified(|ui| {
+                    ui.label("No tabs open — create a new note, or pick one from the tabs list.");
+                });
+                return;
+            }
             let mut requested_kind = self.workspace.active_document().kind;
             let mut requested_title_rename = false;
             let mut finish_rename = false;
@@ -855,19 +1044,24 @@ impl eframe::App for GoatpadApp {
         });
 
         if let Some(id) = self.delete_confirmation {
-            let confirm_with_keyboard =
-                ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+            let title = self
+                .workspace
+                .document(id)
+                .map_or("Untitled", |document| document.title.as_str())
+                .to_owned();
             let cancel_with_keyboard =
                 ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
-            egui::Window::new("Delete tab?")
+            egui::Window::new("Delete note?")
                 .collapsible(false)
                 .resizable(false)
                 .show(&ctx, |ui| {
-                    ui.label("This permanently removes the tab and its content file.");
+                    ui.label(format!(
+                        "Delete \"{title}\" permanently? This cannot be undone."
+                    ));
                     ui.horizontal(|ui| {
-                        if confirm_with_keyboard || ui.button("Delete").clicked() {
+                        if ui.button("Delete").clicked() {
                             self.delete_confirmation = None;
-                            self.delete_tab(id);
+                            self.delete_note(id);
                         }
                         if cancel_with_keyboard || ui.button("Cancel").clicked() {
                             self.delete_confirmation = None;
@@ -1000,7 +1194,12 @@ impl eframe::App for GoatpadApp {
         if now.duration_since(self.last_session_save) >= Duration::from_secs(1) {
             self.save_session();
         }
-        if self.workspace.active_document().dirty {
+        if self
+            .session
+            .active_tab
+            .and_then(|id| self.workspace.document(id))
+            .is_some_and(|document| document.dirty)
+        {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
     }
