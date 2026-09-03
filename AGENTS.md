@@ -1,12 +1,9 @@
 # Goatpad: Agents
 
-First read thoroughly `design-and-implementation-plan.md`.
-
-Step-By-Step plan (with phases) written from the implementation plan: `step-by-step-plan.md`
+`README.md` file should be read.
 
 ## NOTES
 
 - Don't use `git` commands without permission.
-- After implementing a single task from a phase, Check and confirm it works, then Check it to indicate its completion.
 - git commit naming convention is use small letter unless necessary, start with 'feat:', 'fix:', 'commit:', 'update:', 'complete:' and so on.
-- NEVER 'check' mark a task without conforming its completion.
+- Update `README.md` file if any change happens to the project (e.g. new features, updates, feature removal, e.t.c.)
