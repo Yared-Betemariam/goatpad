@@ -4,7 +4,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 
 ## Features
 
-- Markdown and plain-text editing in persistent tabs
+- Markdown and plain-text editing in persistent tabs integrated into a Notepad-style custom title bar
 - A searchable Tabs List for reopening closed notes and explicitly deleting unwanted notes
 - Automatic note titles derived from the first line, with custom titles on double-click
 - Import and export of all notes through portable JSON backups
@@ -93,7 +93,7 @@ New notes are named `Untitled` until you type on the first line. Goatpad then us
 
 ## Import and export
 
-Use `File > Export notes…` to save every stored note—including notes that are currently closed—to a portable JSON backup. Use `File > Import notes…` to add the notes from a backup to the Tabs List. Imported notes receive new internal IDs, do not overwrite existing notes, and remain closed until you choose to open them from the Tabs List.
+Open the app-icon menu in the title bar and choose `Export notes…` to save every stored note—including notes that are currently closed—to a portable JSON backup. Choose `Import notes…` from the same menu to add the notes from a backup to the Tabs List. Imported notes receive new internal IDs, do not overwrite existing notes, and remain closed until you choose to open them from the Tabs List.
 
 ## Local data
 

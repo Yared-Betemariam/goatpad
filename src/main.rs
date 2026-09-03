@@ -26,6 +26,14 @@ use settings::Settings;
 use theme::{Theme, apply_theme, ensure_default_themes, install_fonts, load_themes, save_theme};
 use workspace::Workspace;
 
+const TITLE_BAR_HEIGHT: f32 = 40.0;
+const TITLE_BAR_SPACING: f32 = 4.0;
+const TITLE_CONTROL_WIDTH: f32 = 32.0;
+const WINDOW_BUTTON_WIDTH: f32 = 46.0;
+const MIN_DRAG_WIDTH: f32 = 48.0;
+const RESIZE_BORDER_WIDTH: f32 = 5.0;
+const RESIZE_CORNER_SIZE: f32 = 14.0;
+
 #[derive(Clone, Copy)]
 enum ToastKind {
     Error,
@@ -64,7 +72,6 @@ struct GoatpadApp {
     focus_rename: bool,
     workspace_index_dirty: bool,
     toasts: Vec<Toast>,
-    last_window_title: String,
 }
 
 impl GoatpadApp {
@@ -132,7 +139,6 @@ impl GoatpadApp {
                     kind: ToastKind::Error,
                 })
                 .collect(),
-            last_window_title: String::new(),
         })
     }
 
@@ -173,21 +179,6 @@ impl GoatpadApp {
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
             }
-        }
-    }
-
-    fn update_window_title(&mut self, ctx: &egui::Context) {
-        let title = self
-            .session
-            .active_tab
-            .and_then(|id| self.workspace.document(id))
-            .map_or_else(
-                || "Goatpad".to_owned(),
-                |document| window_title(&document.title),
-            );
-        if title != self.last_window_title {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
-            self.last_window_title = title;
         }
     }
 
@@ -713,8 +704,202 @@ fn cursor_position(content: &str, cursor_offset: usize) -> (usize, usize) {
     (line, column)
 }
 
-fn window_title(tab_title: &str) -> String {
-    format!("{tab_title} — Goatpad")
+fn show_app_icon_menu(
+    ui: &mut egui::Ui,
+    requested_import: &mut bool,
+    requested_export: &mut bool,
+    settings_open: &mut bool,
+) {
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(TITLE_CONTROL_WIDTH, TITLE_BAR_HEIGHT),
+        egui::Sense::click(),
+    );
+    if response.hovered() || response.is_pointer_button_down_on() {
+        let fill = if response.is_pointer_button_down_on() {
+            ui.style().visuals.widgets.active.bg_fill
+        } else {
+            ui.style().visuals.widgets.hovered.bg_fill
+        };
+        ui.painter().rect_filled(rect, 0.0, fill);
+    }
+
+    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(20.0, 22.0));
+    ui.painter()
+        .rect_filled(icon_rect, 2.0, egui::Color32::from_rgb(28, 52, 40));
+    let page_rect = icon_rect.shrink2(egui::vec2(3.0, 2.0));
+    ui.painter()
+        .rect_filled(page_rect, 1.0, egui::Color32::from_rgb(107, 193, 123));
+    for offset in [6.0, 10.0, 14.0] {
+        let right_padding = if offset == 14.0 { 5.0 } else { 2.0 };
+        ui.painter().line_segment(
+            [
+                egui::pos2(page_rect.left() + 2.0, page_rect.top() + offset),
+                egui::pos2(page_rect.right() - right_padding, page_rect.top() + offset),
+            ],
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(231, 255, 235)),
+        );
+    }
+
+    let response = response.on_hover_text("Goatpad menu");
+    egui::Popup::menu(&response).show(|ui| {
+        if ui.button("Import notes…").clicked() {
+            *requested_import = true;
+            ui.close();
+        }
+        if ui.button("Export notes…").clicked() {
+            *requested_export = true;
+            ui.close();
+        }
+        ui.separator();
+        if ui.button("Settings").clicked() {
+            *settings_open = true;
+            ui.close();
+        }
+    });
+}
+
+fn window_button(ui: &mut egui::Ui, label: &str, is_close: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(WINDOW_BUTTON_WIDTH, TITLE_BAR_HEIGHT),
+        egui::Sense::click(),
+    );
+    let pointer_down = response.is_pointer_button_down_on();
+    let fill = if is_close && (response.hovered() || pointer_down) {
+        egui::Color32::from_rgb(196, 43, 28)
+    } else if pointer_down {
+        ui.style().visuals.widgets.active.bg_fill
+    } else if response.hovered() {
+        ui.style().visuals.widgets.hovered.bg_fill
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+    ui.painter().rect_filled(rect, 0.0, fill);
+    let text_color = if is_close && (response.hovered() || pointer_down) {
+        egui::Color32::WHITE
+    } else {
+        ui.style().visuals.text_color()
+    };
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        egui::TextStyle::Button.resolve(ui.style()),
+        text_color,
+    );
+    response
+}
+
+fn show_resize_handles(ctx: &egui::Context) {
+    if ctx.input(|input| input.viewport().maximized.unwrap_or(false)) {
+        return;
+    }
+    let viewport = ctx.viewport_rect();
+    if viewport.width() <= 2.0 * RESIZE_CORNER_SIZE || viewport.height() <= 2.0 * RESIZE_CORNER_SIZE
+    {
+        return;
+    }
+
+    let zones = [
+        (
+            "north",
+            egui::Rect::from_min_max(
+                egui::pos2(viewport.left() + RESIZE_CORNER_SIZE, viewport.top()),
+                egui::pos2(
+                    viewport.right() - RESIZE_CORNER_SIZE,
+                    viewport.top() + RESIZE_BORDER_WIDTH,
+                ),
+            ),
+            egui::ResizeDirection::North,
+            egui::CursorIcon::ResizeVertical,
+        ),
+        (
+            "south",
+            egui::Rect::from_min_max(
+                egui::pos2(
+                    viewport.left() + RESIZE_CORNER_SIZE,
+                    viewport.bottom() - RESIZE_BORDER_WIDTH,
+                ),
+                egui::pos2(viewport.right() - RESIZE_CORNER_SIZE, viewport.bottom()),
+            ),
+            egui::ResizeDirection::South,
+            egui::CursorIcon::ResizeVertical,
+        ),
+        (
+            "west",
+            egui::Rect::from_min_max(
+                egui::pos2(viewport.left(), viewport.top() + RESIZE_CORNER_SIZE),
+                egui::pos2(
+                    viewport.left() + RESIZE_BORDER_WIDTH,
+                    viewport.bottom() - RESIZE_CORNER_SIZE,
+                ),
+            ),
+            egui::ResizeDirection::West,
+            egui::CursorIcon::ResizeHorizontal,
+        ),
+        (
+            "east",
+            egui::Rect::from_min_max(
+                egui::pos2(
+                    viewport.right() - RESIZE_BORDER_WIDTH,
+                    viewport.top() + RESIZE_CORNER_SIZE,
+                ),
+                egui::pos2(viewport.right(), viewport.bottom() - RESIZE_CORNER_SIZE),
+            ),
+            egui::ResizeDirection::East,
+            egui::CursorIcon::ResizeHorizontal,
+        ),
+        (
+            "north_west",
+            egui::Rect::from_min_size(viewport.left_top(), egui::Vec2::splat(RESIZE_CORNER_SIZE)),
+            egui::ResizeDirection::NorthWest,
+            egui::CursorIcon::ResizeNwSe,
+        ),
+        (
+            "north_east",
+            egui::Rect::from_min_size(
+                egui::pos2(viewport.right() - RESIZE_CORNER_SIZE, viewport.top()),
+                egui::Vec2::splat(RESIZE_CORNER_SIZE),
+            ),
+            egui::ResizeDirection::NorthEast,
+            egui::CursorIcon::ResizeNeSw,
+        ),
+        (
+            "south_west",
+            egui::Rect::from_min_size(
+                egui::pos2(viewport.left(), viewport.bottom() - RESIZE_CORNER_SIZE),
+                egui::Vec2::splat(RESIZE_CORNER_SIZE),
+            ),
+            egui::ResizeDirection::SouthWest,
+            egui::CursorIcon::ResizeNeSw,
+        ),
+        (
+            "south_east",
+            egui::Rect::from_min_size(
+                egui::pos2(
+                    viewport.right() - RESIZE_CORNER_SIZE,
+                    viewport.bottom() - RESIZE_CORNER_SIZE,
+                ),
+                egui::Vec2::splat(RESIZE_CORNER_SIZE),
+            ),
+            egui::ResizeDirection::SouthEast,
+            egui::CursorIcon::ResizeNwSe,
+        ),
+    ];
+
+    for (name, zone, direction, cursor) in zones {
+        egui::Area::new(egui::Id::new(("viewport_resize", name)))
+            .order(egui::Order::Foreground)
+            .fixed_pos(zone.min)
+            .constrain(false)
+            .show(ctx, |ui| {
+                let response = ui
+                    .allocate_response(zone.size(), egui::Sense::drag())
+                    .on_hover_cursor(cursor);
+                if response.drag_started_by(egui::PointerButton::Primary) {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(direction));
+                }
+            });
+    }
 }
 
 fn goatpad_icon() -> egui::IconData {
@@ -749,7 +934,6 @@ impl eframe::App for GoatpadApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.poll_writer_results();
-        self.update_window_title(&ctx);
         self.update_window_geometry(&ctx);
         self.dispatch_hotkeys(&ctx);
         let mut requested_switch = None;
@@ -765,52 +949,126 @@ impl eframe::App for GoatpadApp {
             .filter_map(|id| {
                 self.workspace
                     .document(*id)
-                    .map(|document| (*id, document.title.clone(), document.dirty))
+                    .map(|document| (*id, document.title.clone()))
             })
             .collect::<Vec<_>>();
-        egui::Panel::top("tab_bar").show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("Import notes…").clicked() {
-                        requested_import = true;
-                        ui.close();
+        egui::Panel::top("title_bar")
+            .exact_size(TITLE_BAR_HEIGHT)
+            .frame(
+                egui::Frame::new()
+                    .fill(ui.style().visuals.panel_fill)
+                    .inner_margin(egui::Margin::ZERO),
+            )
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(TITLE_BAR_SPACING, 0.0);
+                ui.horizontal(|ui| {
+                    ui.set_height(TITLE_BAR_HEIGHT);
+                    show_app_icon_menu(
+                        ui,
+                        &mut requested_import,
+                        &mut requested_export,
+                        &mut self.settings_open,
+                    );
+
+                    if !tabs.is_empty() {
+                        let fixed_width = 2.0 * TITLE_CONTROL_WIDTH
+                            + 3.0 * WINDOW_BUTTON_WIDTH
+                            + MIN_DRAG_WIDTH
+                            + 7.0 * TITLE_BAR_SPACING;
+                        let tabs_width = (ui.available_width() - fixed_width).max(80.0);
+                        egui::ScrollArea::horizontal()
+                            .id_salt("title_bar_tabs")
+                            .max_width(tabs_width)
+                            .scroll_bar_visibility(
+                                egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                            )
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    for (id, title) in &tabs {
+                                        let response = ui
+                                            .selectable_label(
+                                                self.session.active_tab == Some(*id),
+                                                title,
+                                            )
+                                            .on_hover_text("Double-click to rename");
+                                        if response.clicked() {
+                                            requested_switch = Some(*id);
+                                        }
+                                        if response.double_clicked() {
+                                            requested_rename = Some(*id);
+                                        }
+                                        let close_response =
+                                            ui.small_button("×").on_hover_text("Close tab");
+                                        if response.middle_clicked()
+                                            || close_response.middle_clicked()
+                                            || close_response.clicked()
+                                        {
+                                            requested_close = Some(*id);
+                                        }
+                                    }
+                                });
+                            });
                     }
-                    if ui.button("Export notes…").clicked() {
-                        requested_export = true;
-                        ui.close();
+
+                    if ui
+                        .add_sized(
+                            [TITLE_CONTROL_WIDTH, TITLE_CONTROL_WIDTH],
+                            egui::Button::new("+").frame(false),
+                        )
+                        .on_hover_text("New tab")
+                        .clicked()
+                    {
+                        requested_new_tab = true;
+                    }
+                    if ui
+                        .add_sized(
+                            [TITLE_CONTROL_WIDTH, TITLE_CONTROL_WIDTH],
+                            egui::Button::new("⋯").frame(false),
+                        )
+                        .on_hover_text("Tabs list")
+                        .clicked()
+                    {
+                        self.tabs_list_open = !self.tabs_list_open;
+                    }
+
+                    let drag_width = (ui.available_width()
+                        - 3.0 * WINDOW_BUTTON_WIDTH
+                        - 3.0 * TITLE_BAR_SPACING)
+                        .max(0.0);
+                    if drag_width > 0.0 {
+                        let drag_response = ui
+                            .allocate_response(
+                                egui::vec2(drag_width, TITLE_BAR_HEIGHT),
+                                egui::Sense::drag(),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::Grab);
+                        if drag_response.drag_started_by(egui::PointerButton::Primary) {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                        }
+                    }
+
+                    if window_button(ui, "−", false)
+                        .on_hover_text("Minimize")
+                        .clicked()
+                    {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                    }
+                    let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
+                    let maximize_label = if maximized { "❐" } else { "□" };
+                    if window_button(ui, maximize_label, false)
+                        .on_hover_text(if maximized { "Restore" } else { "Maximize" })
+                        .clicked()
+                    {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                    }
+                    if window_button(ui, "×", true)
+                        .on_hover_text("Close")
+                        .clicked()
+                    {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
-                ui.separator();
-                for (id, title, dirty) in &tabs {
-                    let label = if *dirty {
-                        format!("{title} •")
-                    } else {
-                        title.clone()
-                    };
-                    let response = ui
-                        .selectable_label(self.session.active_tab == Some(*id), label)
-                        .on_hover_text("Double-click to rename");
-                    if response.clicked() {
-                        requested_switch = Some(*id);
-                    }
-                    if response.double_clicked() {
-                        requested_rename = Some(*id);
-                    }
-                    if ui.small_button("×").on_hover_text("Close tab").clicked() {
-                        requested_close = Some(*id);
-                    }
-                }
-                if ui.button("+").on_hover_text("New tab").clicked() {
-                    requested_new_tab = true;
-                }
-                if ui.button("⋯").on_hover_text("Tabs list").clicked() {
-                    self.tabs_list_open = !self.tabs_list_open;
-                }
-                if ui.button("⚙").on_hover_text("Settings").clicked() {
-                    self.settings_open = true;
-                }
             });
-        });
         if let Some(id) = requested_switch {
             self.activate_tab(id);
         }
@@ -1202,6 +1460,7 @@ impl eframe::App for GoatpadApp {
         {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
+        show_resize_handles(&ctx);
     }
 
     fn on_exit(&mut self) {
@@ -1218,8 +1477,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let session = Session::load(&paths)?;
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1000.0, 700.0])
+        .with_min_inner_size([640.0, 420.0])
         .with_title("Goatpad")
-        .with_icon(goatpad_icon());
+        .with_icon(goatpad_icon())
+        .with_decorations(false);
     if let Some(window) = session.window {
         viewport = viewport
             .with_inner_size([window.width, window.height])
@@ -1244,7 +1505,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cursor_position, toggle_bullet_list, window_title, wrap_selection};
+    use super::{cursor_position, toggle_bullet_list, wrap_selection};
     #[test]
     fn cursor_starts_at_line_one_column_one() {
         assert_eq!(cursor_position("", 0), (1, 1));
@@ -1281,10 +1542,5 @@ mod tests {
         let length = text.chars().count();
         toggle_bullet_list(&mut text, 0, length);
         assert_eq!(text, "one\ntwo");
-    }
-
-    #[test]
-    fn window_title_reflects_the_active_tab() {
-        assert_eq!(window_title("Notes"), "Notes — Goatpad");
     }
 }
