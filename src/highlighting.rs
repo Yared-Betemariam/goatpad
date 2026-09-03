@@ -27,17 +27,17 @@ impl Style {
         }
     }
 
-    fn format(self) -> TextFormat {
-        let mut format = default_format();
+    fn format(self, zoom: f32) -> TextFormat {
+        let mut format = default_format(zoom);
         match self {
             Self::Heading => {
-                format.font_id = FontId::new(20.0, FontFamily::Proportional);
+                format.font_id = FontId::new(20.0 * zoom, FontFamily::Proportional);
                 format.color = Color32::from_rgb(111, 168, 255);
             }
-            Self::Strong => format.font_id = FontId::new(16.0, FontFamily::Proportional),
+            Self::Strong => format.font_id = FontId::new(16.0 * zoom, FontFamily::Proportional),
             Self::Emphasis => format.italics = true,
             Self::Code => {
-                format.font_id = FontId::new(15.0, FontFamily::Monospace);
+                format.font_id = FontId::new(15.0 * zoom, FontFamily::Monospace);
                 format.color = Color32::from_rgb(232, 177, 94);
                 format.background = Color32::from_rgb(45, 45, 50);
             }
@@ -51,15 +51,16 @@ impl Style {
     }
 }
 
-fn default_format() -> TextFormat {
+fn default_format(zoom: f32) -> TextFormat {
     TextFormat::simple(
-        FontId::new(16.0, FontFamily::Proportional),
+        FontId::new(16.0 * zoom, FontFamily::Proportional),
         Color32::LIGHT_GRAY,
     )
 }
 
 /// Produces a live Markdown layout while preserving the editor's original text.
-pub fn highlight(text: &str) -> LayoutJob {
+/// `zoom` scales every font size uniformly, mirroring Notepad's zoom control.
+pub fn highlight(text: &str, zoom: f32) -> LayoutJob {
     let mut spans = Vec::<(Range<usize>, Style)>::new();
     let mut active = Vec::<Style>::new();
 
@@ -89,16 +90,12 @@ pub fn highlight(text: &str) -> LayoutJob {
         }
     }
 
-    layout_with_spans(text, spans)
+    layout_with_spans(text, spans, zoom)
 }
 
-pub fn plain(text: &str) -> LayoutJob {
-    LayoutJob::simple(
-        text.to_owned(),
-        default_format().font_id,
-        default_format().color,
-        f32::INFINITY,
-    )
+pub fn plain(text: &str, zoom: f32) -> LayoutJob {
+    let format = default_format(zoom);
+    LayoutJob::simple(text.to_owned(), format.font_id, format.color, f32::INFINITY)
 }
 
 fn style_for_tag(tag: &Tag<'_>) -> Option<Style> {
@@ -123,7 +120,7 @@ fn style_for_end(tag: TagEnd) -> Option<Style> {
     }
 }
 
-fn layout_with_spans(text: &str, spans: Vec<(Range<usize>, Style)>) -> LayoutJob {
+fn layout_with_spans(text: &str, spans: Vec<(Range<usize>, Style)>, zoom: f32) -> LayoutJob {
     let mut styles = vec![None; text.len()];
     for (range, style) in spans {
         for current_style in styles
@@ -137,26 +134,21 @@ fn layout_with_spans(text: &str, spans: Vec<(Range<usize>, Style)>) -> LayoutJob
         }
     }
 
+    let format_at = |style: Option<Style>| {
+        style.map_or_else(|| default_format(zoom), |style| style.format(zoom))
+    };
     let mut job = LayoutJob::default();
     let mut start = 0;
     let mut current = styles.first().copied().flatten();
     for (index, _) in text.char_indices().skip(1) {
         if styles[index] != current {
-            job.append(
-                &text[start..index],
-                0.0,
-                current.map_or_else(default_format, Style::format),
-            );
+            job.append(&text[start..index], 0.0, format_at(current));
             start = index;
             current = styles[index];
         }
     }
     if !text.is_empty() {
-        job.append(
-            &text[start..],
-            0.0,
-            current.map_or_else(default_format, Style::format),
-        );
+        job.append(&text[start..], 0.0, format_at(current));
     }
     job
 }
@@ -167,7 +159,7 @@ mod tests {
 
     #[test]
     fn highlighting_covers_the_entire_document() {
-        let job = highlight("# Heading\n\nA **bold** [link](https://example.com).");
+        let job = highlight("# Heading\n\nA **bold** [link](https://example.com).", 1.0);
         assert_eq!(
             job.text,
             "# Heading\n\nA **bold** [link](https://example.com)."
@@ -181,8 +173,10 @@ mod tests {
 
     #[test]
     fn markdown_constructs_receive_distinct_formats() {
-        let job =
-            highlight("# Heading\n*italic* **bold** `code` [link](https://example.com)\n- item");
+        let job = highlight(
+            "# Heading\n*italic* **bold** `code` [link](https://example.com)\n- item",
+            1.0,
+        );
         let formats = job
             .sections
             .iter()

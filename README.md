@@ -4,11 +4,14 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 
 ## Features
 
-- Markdown and plain-text editing in persistent tabs integrated into a Notepad-style custom title bar
+- A Notepad-style look throughout: a custom title bar with tabs, a classic File/Edit/View menu bar, and a Markdown formatting toolbar
+- Markdown and plain-text editing in persistent tabs, switchable per note (`MD`/`TXT`)
+- A Markdown formatting toolbar (shown for Markdown notes) with headings, bulleted/numbered lists, bold, italic, strikethrough, links, tables, and clear formatting
 - A searchable Tabs List for reopening closed notes and explicitly deleting unwanted notes
-- Automatic note titles derived from the first line, with custom titles on double-click
+- Automatic note titles derived from the first line, with custom titles via double-click on a tab (renamed in place)
 - Import and export of all notes through portable JSON backups
-- Live Markdown highlighting and common formatting actions
+- Live Markdown highlighting and common formatting actions, available from the toolbar, the Edit menu, or keyboard shortcuts
+- A Notepad-style status bar with cursor position, character count, document type, zoom control, line-ending, and encoding
 - Automatic background saving
 - Workspace and window restoration between launches
 - Custom light and dark themes
@@ -86,24 +89,31 @@ Close Goatpad before upgrading. Uninstalling or upgrading the application does n
 
 ## Keyboard shortcuts
 
-| Action                    | Shortcut                       |
-| ------------------------- | ------------------------------ |
-| New tab                   | `Ctrl+T`                       |
-| Close tab                 | `Ctrl+Shift+W`                 |
-| Next tab                  | `Ctrl+Tab`                     |
-| Previous tab              | `Ctrl+Shift+Tab`               |
-| Settings                  | `Ctrl+,`                       |
-| Bold / Italic / Underline | `Ctrl+B` / `Ctrl+I` / `Ctrl+U` |
+| Action                    | Shortcut                        |
+| ------------------------- | ------------------------------- |
+| New tab                   | `Ctrl+T`                        |
+| Close tab                 | `Ctrl+Shift+W`                  |
+| Next tab                  | `Ctrl+Tab`                      |
+| Previous tab              | `Ctrl+Shift+Tab`                |
+| Settings                  | `Ctrl+,`                        |
+| Bold / Italic / Underline | `Ctrl+B` / `Ctrl+I` / `Ctrl+U`  |
+| Strikethrough             | `Ctrl+Shift+X`                  |
+| Bulleted / Numbered list  | `Ctrl+Shift+8` / `Ctrl+Shift+7` |
+| Insert link               | `Ctrl+K`                        |
 
-Shortcuts can be changed from the application settings.
+Formatting shortcuts only apply to Markdown notes. Shortcuts can be changed from the application settings.
+
+## The Markdown formatting toolbar
+
+Markdown notes show a toolbar above the editor, mirroring Notepad's Markdown view: a heading dropdown (H1-H3), a list dropdown (bulleted/numbered), bold, italic, strikethrough, link, table, and clear-formatting buttons. Plain-text notes hide these tools since Markdown syntax does not apply. The `MD`/`TXT` switch at the right of the toolbar (also available under the `View` menu) changes a note's type at any time.
 
 ## Note titles
 
-New notes are named `Untitled` until you type on the first line. Goatpad then uses up to the first 32 characters of that line as the note title. Double-click a tab or the large title above the editor to enter a custom title. Clear the custom title to return to automatic naming.
+New notes are named `Untitled` until you type on the first line. Goatpad then uses up to the first 32 characters of that line as the note title. Double-click a tab to rename it in place; press `Enter` to confirm or `Escape` to cancel. Clear the custom title to return to automatic naming.
 
 ## Import and export
 
-Open the app-icon menu in the title bar and choose `Export notes…` to save every stored note—including notes that are currently closed—to a portable JSON backup. Choose `Import notes…` from the same menu to add the notes from a backup to the Tabs List. Imported notes receive new internal IDs, do not overwrite existing notes, and remain closed until you choose to open them from the Tabs List.
+Open the `File` menu and choose `Export notes…` to save every stored note—including notes that are currently closed—to a portable JSON backup. Choose `Import notes…` from the same menu to add the notes from a backup to the Tabs List. Imported notes receive new internal IDs, do not overwrite existing notes, and remain closed until you choose to open them from the Tabs List.
 
 ## Local data
 

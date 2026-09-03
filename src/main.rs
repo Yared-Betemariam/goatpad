@@ -8,6 +8,7 @@ use std::{
 use uuid::Uuid;
 
 mod document;
+mod formatting;
 mod highlighting;
 mod hotkeys;
 mod paths;
@@ -27,6 +28,7 @@ use theme::{Theme, apply_theme, ensure_default_themes, install_fonts, load_theme
 use workspace::Workspace;
 
 const TITLE_BAR_HEIGHT: f32 = 40.0;
+const MENU_BAR_HEIGHT: f32 = 28.0;
 const TITLE_BAR_SPACING: f32 = 4.0;
 const TITLE_CONTROL_WIDTH: f32 = 32.0;
 const WINDOW_BUTTON_WIDTH: f32 = 46.0;
@@ -76,6 +78,7 @@ struct GoatpadApp {
     focus_rename: bool,
     workspace_index_dirty: bool,
     toasts: Vec<Toast>,
+    zoom: f32,
 }
 
 impl GoatpadApp {
@@ -149,6 +152,7 @@ impl GoatpadApp {
                     kind: ToastKind::Error,
                 })
                 .collect(),
+            zoom: 1.0,
         })
     }
 
@@ -599,39 +603,34 @@ impl GoatpadApp {
         }
     }
 
-    fn apply_formatting(&mut self, ctx: &egui::Context, action: Action) {
+    fn selection_range(&self, ctx: &egui::Context) -> (usize, usize) {
         let editor_id = self.editor_id();
         let range = egui::widgets::text_edit::TextEditState::load(ctx, editor_id)
             .and_then(|state| state.cursor.char_range())
             .unwrap_or_else(|| {
                 egui::text::CCursorRange::one(egui::text::CCursor::new(self.cursor_offset))
             });
-        let (start, end) = if range.primary.index.0 <= range.secondary.index.0 {
+        if range.primary.index.0 <= range.secondary.index.0 {
             (range.primary.index.0, range.secondary.index.0)
         } else {
             (range.secondary.index.0, range.primary.index.0)
-        };
-        let new_range = if action == Action::ToggleBulletList {
-            toggle_bullet_list(
-                &mut self.workspace.active_document_mut().content,
-                start,
-                end,
-            )
-        } else {
-            let (open, close) = match action {
-                Action::ToggleBold => ("**", "**"),
-                Action::ToggleItalic => ("*", "*"),
-                Action::ToggleUnderline => ("<u>", "</u>"),
-                _ => return,
-            };
-            wrap_selection(
-                &mut self.workspace.active_document_mut().content,
-                start,
-                end,
-                open,
-                close,
-            )
-        };
+        }
+    }
+
+    /// Applies a selection-transforming edit (formatting, list toggles, links, tables, …)
+    /// to the active document and restores the cursor/selection afterwards.
+    fn apply_text_transform(
+        &mut self,
+        ctx: &egui::Context,
+        transform: impl FnOnce(&mut String, usize, usize) -> egui::text::CCursorRange,
+    ) {
+        let (start, end) = self.selection_range(ctx);
+        let editor_id = self.editor_id();
+        let new_range = transform(
+            &mut self.workspace.active_document_mut().content,
+            start,
+            end,
+        );
         let mut state =
             egui::widgets::text_edit::TextEditState::load(ctx, editor_id).unwrap_or_default();
         state.cursor.set_char_range(Some(new_range));
@@ -639,101 +638,62 @@ impl GoatpadApp {
         self.cursor_offset = new_range.primary.index.0;
         self.mark_active_document_edited();
     }
-}
 
-fn byte_index(text: &str, char_index: usize) -> usize {
-    text.char_indices()
-        .nth(char_index)
-        .map_or(text.len(), |(index, _)| index)
-}
-
-fn wrap_selection(
-    text: &mut String,
-    start: usize,
-    end: usize,
-    open: &str,
-    close: &str,
-) -> egui::text::CCursorRange {
-    let start = start.min(text.chars().count());
-    let end = end.min(text.chars().count());
-    let start_byte = byte_index(text, start);
-    let end_byte = byte_index(text, end);
-    text.insert_str(end_byte, close);
-    text.insert_str(start_byte, open);
-    if start == end {
-        egui::text::CCursorRange::one(egui::text::CCursor::new(start + open.chars().count()))
-    } else {
-        egui::text::CCursorRange::two(
-            egui::text::CCursor::new(start + open.chars().count()),
-            egui::text::CCursor::new(end + open.chars().count()),
-        )
-    }
-}
-
-fn toggle_bullet_list(text: &mut String, start: usize, end: usize) -> egui::text::CCursorRange {
-    let start_byte = byte_index(text, start.min(text.chars().count()));
-    let end_byte = byte_index(text, end.min(text.chars().count()));
-    let line_start = text[..start_byte].rfind('\n').map_or(0, |index| index + 1);
-    let line_end = text[end_byte..]
-        .find('\n')
-        .map_or(text.len(), |index| end_byte + index);
-    let selected = &text[line_start..line_end];
-    let lines: Vec<&str> = selected.split('\n').collect();
-    let remove = lines.iter().all(|line| line.starts_with("- "));
-    let replacement = lines
-        .into_iter()
-        .map(|line| {
-            if remove {
-                line.strip_prefix("- ").unwrap_or(line).to_owned()
-            } else {
-                format!("- {line}")
+    fn apply_formatting(&mut self, ctx: &egui::Context, action: Action) {
+        match action {
+            Action::ToggleBulletList => {
+                self.apply_text_transform(ctx, formatting::toggle_bullet_list)
             }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let replacement_chars = replacement.chars().count();
-    text.replace_range(line_start..line_end, &replacement);
-    let prefix_chars = text[..line_start].chars().count();
-    egui::text::CCursorRange::two(
-        egui::text::CCursor::new(prefix_chars),
-        egui::text::CCursor::new(prefix_chars + replacement_chars),
-    )
-}
-
-fn cursor_position(content: &str, cursor_offset: usize) -> (usize, usize) {
-    let mut line = 1;
-    let mut column = 1;
-    for character in content.chars().take(cursor_offset) {
-        if character == '\n' {
-            line += 1;
-            column = 1;
-        } else {
-            column += 1;
+            Action::ToggleNumberedList => {
+                self.apply_text_transform(ctx, formatting::toggle_numbered_list)
+            }
+            Action::InsertLink => self.apply_text_transform(ctx, formatting::insert_link),
+            Action::ToggleBold => {
+                self.apply_text_transform(ctx, |text, start, end| {
+                    formatting::wrap_selection(text, start, end, "**", "**")
+                });
+            }
+            Action::ToggleItalic => {
+                self.apply_text_transform(ctx, |text, start, end| {
+                    formatting::wrap_selection(text, start, end, "*", "*")
+                });
+            }
+            Action::ToggleUnderline => {
+                self.apply_text_transform(ctx, |text, start, end| {
+                    formatting::wrap_selection(text, start, end, "<u>", "</u>")
+                });
+            }
+            Action::ToggleStrikethrough => {
+                self.apply_text_transform(ctx, |text, start, end| {
+                    formatting::wrap_selection(text, start, end, "~~", "~~")
+                });
+            }
+            _ => {}
         }
     }
-    (line, column)
-}
 
-fn show_app_icon_menu(
-    ui: &mut egui::Ui,
-    app_icon_texture: &egui::TextureHandle,
-    requested_import: &mut bool,
-    requested_export: &mut bool,
-    settings_open: &mut bool,
-) {
-    let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(TITLE_CONTROL_WIDTH, TITLE_BAR_HEIGHT),
-        egui::Sense::click(),
-    );
-    if response.hovered() || response.is_pointer_button_down_on() {
-        let fill = if response.is_pointer_button_down_on() {
-            ui.style().visuals.widgets.active.bg_fill
-        } else {
-            ui.style().visuals.widgets.hovered.bg_fill
-        };
-        ui.painter().rect_filled(rect, 0.0, fill);
+    fn apply_heading(&mut self, ctx: &egui::Context, level: u8) {
+        self.apply_text_transform(ctx, move |text, start, end| {
+            formatting::set_heading(text, start, end, level)
+        });
     }
 
+    fn apply_clear_formatting(&mut self, ctx: &egui::Context) {
+        self.apply_text_transform(ctx, formatting::clear_formatting);
+    }
+
+    fn apply_table_insert(&mut self, ctx: &egui::Context) {
+        self.apply_text_transform(ctx, formatting::insert_table);
+    }
+}
+
+/// Paints the small application icon shown at the left of the title bar.
+/// It is purely decorative, matching Notepad's non-interactive app icon.
+fn show_app_icon(ui: &mut egui::Ui, app_icon_texture: &egui::TextureHandle) {
+    let (rect, _response) = ui.allocate_exact_size(
+        egui::vec2(TITLE_CONTROL_WIDTH, TITLE_BAR_HEIGHT),
+        egui::Sense::hover(),
+    );
     let icon_rect = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(22.0));
     ui.painter().image(
         app_icon_texture.id(),
@@ -741,23 +701,6 @@ fn show_app_icon_menu(
         egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
         egui::Color32::WHITE,
     );
-
-    let response = response.on_hover_text("Goatpad menu");
-    egui::Popup::menu(&response).show(|ui| {
-        if ui.button("Import notes…").clicked() {
-            *requested_import = true;
-            ui.close();
-        }
-        if ui.button("Export notes…").clicked() {
-            *requested_export = true;
-            ui.close();
-        }
-        ui.separator();
-        if ui.button("Settings").clicked() {
-            *settings_open = true;
-            ui.close();
-        }
-    });
 }
 
 fn window_button(ui: &mut egui::Ui, label: &str, is_close: bool) -> egui::Response {
@@ -922,8 +865,13 @@ impl eframe::App for GoatpadApp {
         let mut requested_close = None;
         let mut requested_rename = None;
         let mut requested_new_tab = false;
-        let mut requested_import = false;
-        let mut requested_export = false;
+        let mut finish_tab_rename = false;
+        let mut cancel_tab_rename = false;
+        let active_is_markdown = self
+            .session
+            .active_tab
+            .and_then(|id| self.workspace.document(id))
+            .is_some_and(|document| document.kind == DocKind::Md);
         let tabs = self
             .session
             .open_tabs
@@ -945,13 +893,7 @@ impl eframe::App for GoatpadApp {
                 ui.spacing_mut().item_spacing = egui::vec2(TITLE_BAR_SPACING, 0.0);
                 ui.horizontal(|ui| {
                     ui.set_height(TITLE_BAR_HEIGHT);
-                    show_app_icon_menu(
-                        ui,
-                        &self.app_icon_texture,
-                        &mut requested_import,
-                        &mut requested_export,
-                        &mut self.settings_open,
-                    );
+                    show_app_icon(ui, &self.app_icon_texture);
 
                     if !tabs.is_empty() {
                         let fixed_width = 2.0 * TITLE_CONTROL_WIDTH
@@ -968,25 +910,56 @@ impl eframe::App for GoatpadApp {
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     for (id, title) in &tabs {
-                                        let response = ui
-                                            .selectable_label(
-                                                self.session.active_tab == Some(*id),
-                                                title,
-                                            )
-                                            .on_hover_text("Double-click to rename");
-                                        if response.clicked() {
-                                            requested_switch = Some(*id);
-                                        }
-                                        if response.double_clicked() {
-                                            requested_rename = Some(*id);
-                                        }
-                                        let close_response =
-                                            ui.small_button("×").on_hover_text("Close tab");
-                                        if response.middle_clicked()
-                                            || close_response.middle_clicked()
-                                            || close_response.clicked()
-                                        {
-                                            requested_close = Some(*id);
+                                        if self.renaming_document == Some(*id) {
+                                            let response = ui.add(
+                                                egui::TextEdit::singleline(&mut self.rename_buffer)
+                                                    .desired_width(140.0)
+                                                    .hint_text("Note title"),
+                                            );
+                                            if self.focus_rename {
+                                                response.request_focus();
+                                                self.focus_rename = false;
+                                            }
+                                            let enter = response.has_focus()
+                                                && ui.input_mut(|input| {
+                                                    input.consume_key(
+                                                        egui::Modifiers::NONE,
+                                                        egui::Key::Enter,
+                                                    )
+                                                });
+                                            let escape = response.has_focus()
+                                                && ui.input_mut(|input| {
+                                                    input.consume_key(
+                                                        egui::Modifiers::NONE,
+                                                        egui::Key::Escape,
+                                                    )
+                                                });
+                                            if escape {
+                                                cancel_tab_rename = true;
+                                            } else if enter || response.lost_focus() {
+                                                finish_tab_rename = true;
+                                            }
+                                        } else {
+                                            let response = ui
+                                                .selectable_label(
+                                                    self.session.active_tab == Some(*id),
+                                                    title,
+                                                )
+                                                .on_hover_text("Double-click to rename");
+                                            if response.clicked() {
+                                                requested_switch = Some(*id);
+                                            }
+                                            if response.double_clicked() {
+                                                requested_rename = Some(*id);
+                                            }
+                                            let close_response =
+                                                ui.small_button("×").on_hover_text("Close tab");
+                                            if response.middle_clicked()
+                                                || close_response.middle_clicked()
+                                                || close_response.clicked()
+                                            {
+                                                requested_close = Some(*id);
+                                            }
                                         }
                                     }
                                 });
@@ -1064,12 +1037,200 @@ impl eframe::App for GoatpadApp {
         if requested_new_tab {
             self.create_tab();
         }
-        if requested_import {
-            self.import_notes();
+        if cancel_tab_rename {
+            self.cancel_rename();
+        } else if finish_tab_rename {
+            self.finish_rename();
         }
-        if requested_export {
-            self.export_notes();
-        }
+
+        egui::Panel::top("menu_bar")
+            .exact_size(MENU_BAR_HEIGHT)
+            .frame(
+                egui::Frame::new()
+                    .fill(ui.style().visuals.panel_fill)
+                    .inner_margin(egui::Margin::ZERO),
+            )
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.set_height(MENU_BAR_HEIGHT);
+                    ui.add_space(8.0);
+                    ui.menu_button("File", |ui| {
+                        if ui.button("New tab").clicked() {
+                            self.create_tab();
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(
+                                self.session.active_tab.is_some(),
+                                egui::Button::new("Close tab"),
+                            )
+                            .clicked()
+                        {
+                            if let Some(id) = self.session.active_tab {
+                                self.close_tab(id);
+                            }
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui.button("Tabs list…").clicked() {
+                            self.tabs_list_open = true;
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui.button("Import notes…").clicked() {
+                            self.import_notes();
+                            ui.close();
+                        }
+                        if ui.button("Export notes…").clicked() {
+                            self.export_notes();
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui.button("Settings…").clicked() {
+                            self.settings_open = true;
+                            ui.close();
+                        }
+                    });
+                    ui.menu_button("Edit", |ui| {
+                        let enabled = active_is_markdown;
+                        if ui
+                            .add_enabled(enabled, egui::Button::new("Bold"))
+                            .on_hover_text("Ctrl+B")
+                            .clicked()
+                        {
+                            self.apply_formatting(&ctx, Action::ToggleBold);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(enabled, egui::Button::new("Italic"))
+                            .on_hover_text("Ctrl+I")
+                            .clicked()
+                        {
+                            self.apply_formatting(&ctx, Action::ToggleItalic);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(enabled, egui::Button::new("Underline"))
+                            .on_hover_text("Ctrl+U")
+                            .clicked()
+                        {
+                            self.apply_formatting(&ctx, Action::ToggleUnderline);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(enabled, egui::Button::new("Strikethrough"))
+                            .on_hover_text("Ctrl+Shift+X")
+                            .clicked()
+                        {
+                            self.apply_formatting(&ctx, Action::ToggleStrikethrough);
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui
+                            .add_enabled(enabled, egui::Button::new("Bulleted list"))
+                            .on_hover_text("Ctrl+Shift+8")
+                            .clicked()
+                        {
+                            self.apply_formatting(&ctx, Action::ToggleBulletList);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(enabled, egui::Button::new("Numbered list"))
+                            .on_hover_text("Ctrl+Shift+7")
+                            .clicked()
+                        {
+                            self.apply_formatting(&ctx, Action::ToggleNumberedList);
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui
+                            .add_enabled(enabled, egui::Button::new("Link…"))
+                            .on_hover_text("Ctrl+K")
+                            .clicked()
+                        {
+                            self.apply_formatting(&ctx, Action::InsertLink);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(enabled, egui::Button::new("Clear formatting"))
+                            .clicked()
+                        {
+                            self.apply_clear_formatting(&ctx);
+                            ui.close();
+                        }
+                    });
+                    ui.menu_button("View", |ui| {
+                        if let Some(document_id) = self.session.active_tab {
+                            let current_kind = self
+                                .workspace
+                                .document(document_id)
+                                .map(|document| document.kind);
+                            if ui
+                                .selectable_label(
+                                    current_kind == Some(DocKind::Md),
+                                    "Markdown document",
+                                )
+                                .clicked()
+                            {
+                                self.flush_active_now();
+                                if let Err(error) =
+                                    self.workspace.set_document_kind(document_id, DocKind::Md)
+                                {
+                                    self.report_error(format!(
+                                        "Could not change document type: {error}"
+                                    ));
+                                }
+                                ui.close();
+                            }
+                            if ui
+                                .selectable_label(
+                                    current_kind == Some(DocKind::Txt),
+                                    "Plain text document",
+                                )
+                                .clicked()
+                            {
+                                self.flush_active_now();
+                                if let Err(error) =
+                                    self.workspace.set_document_kind(document_id, DocKind::Txt)
+                                {
+                                    self.report_error(format!(
+                                        "Could not change document type: {error}"
+                                    ));
+                                }
+                                ui.close();
+                            }
+                            ui.separator();
+                        }
+                        ui.menu_button("Theme", |ui| {
+                            for theme in self.themes.clone() {
+                                if ui
+                                    .selectable_label(
+                                        theme.name == self.settings.theme,
+                                        &theme.name,
+                                    )
+                                    .clicked()
+                                {
+                                    self.select_theme(&ctx, theme);
+                                    ui.close();
+                                }
+                            }
+                        });
+                        ui.separator();
+                        if ui.button("Zoom in").clicked() {
+                            self.zoom = (self.zoom + 0.1).min(3.0);
+                            ui.close();
+                        }
+                        if ui.button("Zoom out").clicked() {
+                            self.zoom = (self.zoom - 0.1).max(0.5);
+                            ui.close();
+                        }
+                        if ui.button("Reset zoom").clicked() {
+                            self.zoom = 1.0;
+                            ui.close();
+                        }
+                    });
+                });
+            });
 
         let mut requested_list_open = None;
         let mut requested_list_delete = None;
@@ -1151,21 +1312,47 @@ impl eframe::App for GoatpadApp {
         let editor_stats = self.session.active_tab.and_then(|id| {
             self.workspace.document(id).map(|document| {
                 (
-                    cursor_position(&document.content, self.cursor_offset),
+                    formatting::cursor_position(&document.content, self.cursor_offset),
                     document.content.chars().count(),
+                    formatting::line_ending_label(&document.content),
                 )
             })
         });
         egui::Panel::bottom("footer").show(ui, |ui| {
-            if let Some(((line, column), character_count)) = editor_stats {
-                ui.horizontal(|ui| {
+            ui.horizontal(|ui| {
+                if let Some(((line, column), character_count, line_ending)) = editor_stats {
                     ui.label(format!("Ln {line}, Col {column}"));
                     ui.separator();
                     ui.label(format!("{character_count} chars"));
-                });
-            } else {
-                ui.label("No tab open");
-            }
+                    ui.separator();
+                    ui.label(if active_is_markdown {
+                        "Markdown"
+                    } else {
+                        "Plain text"
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label("UTF-8");
+                        ui.separator();
+                        ui.label(line_ending);
+                        ui.separator();
+                        if ui.small_button("+").on_hover_text("Zoom in").clicked() {
+                            self.zoom = (self.zoom + 0.1).min(3.0);
+                        }
+                        if ui
+                            .button(format!("{:.0}%", self.zoom * 100.0))
+                            .on_hover_text("Reset zoom")
+                            .clicked()
+                        {
+                            self.zoom = 1.0;
+                        }
+                        if ui.small_button("−").on_hover_text("Zoom out").clicked() {
+                            self.zoom = (self.zoom - 0.1).max(0.5);
+                        }
+                    });
+                } else {
+                    ui.label("No tab open");
+                }
+            });
         });
 
         egui::CentralPanel::default().show(ui, |ui| {
@@ -1181,70 +1368,94 @@ impl eframe::App for GoatpadApp {
                 });
                 return;
             }
-            let mut requested_kind = self.workspace.active_document().kind;
-            let mut requested_title_rename = false;
-            let mut finish_rename = false;
-            let mut cancel_rename = false;
-            ui.horizontal(|ui| {
-                if self.renaming_document == Some(document_id) {
-                    let response = ui.add(
-                        egui::TextEdit::singleline(&mut self.rename_buffer)
-                            .desired_width(280.0)
-                            .hint_text("Note title"),
-                    );
-                    if self.focus_rename {
-                        response.request_focus();
-                        self.focus_rename = false;
-                    }
-                    let enter = response.has_focus()
-                        && ui.input_mut(|input| {
-                            input.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
-                        });
-                    cancel_rename = response.has_focus()
-                        && ui.input_mut(|input| {
-                            input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)
-                        });
-                    finish_rename = !cancel_rename && (enter || response.lost_focus());
-                } else {
-                    requested_title_rename = ui
-                        .add(
-                            egui::Label::new(
-                                egui::RichText::new(&self.workspace.active_document().title)
-                                    .heading(),
-                            )
-                            .sense(egui::Sense::click()),
-                        )
-                        .on_hover_text("Double-click to rename")
-                        .double_clicked();
-                }
-                ui.separator();
-                ui.selectable_value(&mut requested_kind, DocKind::Md, "MD");
-                ui.selectable_value(&mut requested_kind, DocKind::Txt, "TXT");
-            });
-            if cancel_rename {
-                self.cancel_rename();
-            } else if finish_rename {
-                self.finish_rename();
-            } else if requested_title_rename {
-                self.begin_rename(document_id);
-            }
-            if requested_kind != self.workspace.active_document().kind {
-                self.flush_active_now();
-                if let Err(error) = self
-                    .workspace
-                    .set_document_kind(document_id, requested_kind)
-                {
-                    self.report_error(format!("Could not change document type: {error}"));
-                }
-            }
             let is_markdown = self.workspace.active_document().kind == DocKind::Md;
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                if is_markdown {
+                    ui.menu_button("H1", |ui| {
+                        if ui.button("Heading 1").clicked() {
+                            self.apply_heading(&ctx, 1);
+                            ui.close();
+                        }
+                        if ui.button("Heading 2").clicked() {
+                            self.apply_heading(&ctx, 2);
+                            ui.close();
+                        }
+                        if ui.button("Heading 3").clicked() {
+                            self.apply_heading(&ctx, 3);
+                            ui.close();
+                        }
+                    });
+                    ui.menu_button("≡", |ui| {
+                        if ui.button("Bulleted list").clicked() {
+                            self.apply_formatting(&ctx, Action::ToggleBulletList);
+                            ui.close();
+                        }
+                        if ui.button("Numbered list").clicked() {
+                            self.apply_formatting(&ctx, Action::ToggleNumberedList);
+                            ui.close();
+                        }
+                    });
+                    ui.separator();
+                    if ui
+                        .button(egui::RichText::new("B").strong())
+                        .on_hover_text("Bold (Ctrl+B)")
+                        .clicked()
+                    {
+                        self.apply_formatting(&ctx, Action::ToggleBold);
+                    }
+                    if ui
+                        .button(egui::RichText::new("I").italics())
+                        .on_hover_text("Italic (Ctrl+I)")
+                        .clicked()
+                    {
+                        self.apply_formatting(&ctx, Action::ToggleItalic);
+                    }
+                    if ui
+                        .button(egui::RichText::new("S").strikethrough())
+                        .on_hover_text("Strikethrough (Ctrl+Shift+X)")
+                        .clicked()
+                    {
+                        self.apply_formatting(&ctx, Action::ToggleStrikethrough);
+                    }
+                    ui.separator();
+                    if ui.button("🔗").on_hover_text("Link (Ctrl+K)").clicked() {
+                        self.apply_formatting(&ctx, Action::InsertLink);
+                    }
+                    if ui.button("▦").on_hover_text("Table").clicked() {
+                        self.apply_table_insert(&ctx);
+                    }
+                    ui.separator();
+                    if ui.button("Aa").on_hover_text("Clear formatting").clicked() {
+                        self.apply_clear_formatting(&ctx);
+                    }
+                } else {
+                    ui.label(egui::RichText::new("Plain text note").weak());
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let mut requested_kind = self.workspace.active_document().kind;
+                    ui.selectable_value(&mut requested_kind, DocKind::Txt, "TXT");
+                    ui.selectable_value(&mut requested_kind, DocKind::Md, "MD");
+                    if requested_kind != self.workspace.active_document().kind {
+                        self.flush_active_now();
+                        if let Err(error) = self
+                            .workspace
+                            .set_document_kind(document_id, requested_kind)
+                        {
+                            self.report_error(format!("Could not change document type: {error}"));
+                        }
+                    }
+                });
+            });
+            ui.separator();
+            let zoom = self.zoom;
             let editor_id = self.editor_id();
             let mut layouter =
                 move |ui: &egui::Ui, buffer: &dyn egui::TextBuffer, wrap_width: f32| {
                     let mut job = if is_markdown {
-                        highlighting::highlight(buffer.as_str())
+                        highlighting::highlight(buffer.as_str(), zoom)
                     } else {
-                        highlighting::plain(buffer.as_str())
+                        highlighting::plain(buffer.as_str(), zoom)
                     };
                     job.wrap.max_width = wrap_width;
                     ui.fonts_mut(|fonts| fonts.layout_job(job))
@@ -1484,46 +1695,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
     )?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{cursor_position, toggle_bullet_list, wrap_selection};
-    #[test]
-    fn cursor_starts_at_line_one_column_one() {
-        assert_eq!(cursor_position("", 0), (1, 1));
-    }
-    #[test]
-    fn cursor_position_tracks_newlines() {
-        assert_eq!(cursor_position("first\nsecond", 6), (2, 1));
-    }
-    #[test]
-    fn cursor_position_counts_unicode_characters() {
-        assert_eq!(cursor_position("café\n🦀", 6), (2, 2));
-    }
-
-    #[test]
-    fn formatting_wraps_a_selection_and_leaves_it_selected() {
-        let mut text = "hello world".to_owned();
-        let range = wrap_selection(&mut text, 6, 11, "**", "**");
-        assert_eq!(text, "hello **world**");
-        assert_eq!(
-            (
-                range.primary.index.0.min(range.secondary.index.0),
-                range.primary.index.0.max(range.secondary.index.0)
-            ),
-            (8, 13)
-        );
-    }
-
-    #[test]
-    fn list_toggle_adds_then_removes_each_selected_line() {
-        let mut text = "one\ntwo".to_owned();
-        let length = text.chars().count();
-        toggle_bullet_list(&mut text, 0, length);
-        assert_eq!(text, "- one\n- two");
-        let length = text.chars().count();
-        toggle_bullet_list(&mut text, 0, length);
-        assert_eq!(text, "one\ntwo");
-    }
 }

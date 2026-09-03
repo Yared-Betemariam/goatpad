@@ -7,7 +7,10 @@ pub enum Action {
     ToggleBold,
     ToggleItalic,
     ToggleUnderline,
+    ToggleStrikethrough,
     ToggleBulletList,
+    ToggleNumberedList,
+    InsertLink,
     NewTab,
     #[serde(alias = "DeleteTab")]
     CloseTab,
@@ -17,11 +20,14 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 12] = [
         Self::ToggleBold,
         Self::ToggleItalic,
         Self::ToggleUnderline,
+        Self::ToggleStrikethrough,
         Self::ToggleBulletList,
+        Self::ToggleNumberedList,
+        Self::InsertLink,
         Self::NewTab,
         Self::CloseTab,
         Self::NextTab,
@@ -34,7 +40,10 @@ impl Action {
             Self::ToggleBold => "Bold",
             Self::ToggleItalic => "Italic",
             Self::ToggleUnderline => "Underline",
+            Self::ToggleStrikethrough => "Strikethrough",
             Self::ToggleBulletList => "Bullet list",
+            Self::ToggleNumberedList => "Numbered list",
+            Self::InsertLink => "Insert link",
             Self::NewTab => "New tab",
             Self::CloseTab => "Close tab",
             Self::NextTab => "Next tab",
@@ -46,7 +55,13 @@ impl Action {
     pub const fn is_formatting(self) -> bool {
         matches!(
             self,
-            Self::ToggleBold | Self::ToggleItalic | Self::ToggleUnderline | Self::ToggleBulletList
+            Self::ToggleBold
+                | Self::ToggleItalic
+                | Self::ToggleUnderline
+                | Self::ToggleStrikethrough
+                | Self::ToggleBulletList
+                | Self::ToggleNumberedList
+                | Self::InsertLink
         )
     }
 }
@@ -129,6 +144,17 @@ pub fn default_bindings() -> HashMap<Action, Keybinding> {
             Keybinding::new(Key::U, Modifiers::CTRL),
         ),
         (
+            Action::ToggleStrikethrough,
+            Keybinding::new(
+                Key::X,
+                Modifiers {
+                    ctrl: true,
+                    shift: true,
+                    ..Modifiers::NONE
+                },
+            ),
+        ),
+        (
             Action::ToggleBulletList,
             Keybinding::new(
                 Key::Num8,
@@ -139,6 +165,18 @@ pub fn default_bindings() -> HashMap<Action, Keybinding> {
                 },
             ),
         ),
+        (
+            Action::ToggleNumberedList,
+            Keybinding::new(
+                Key::Num7,
+                Modifiers {
+                    ctrl: true,
+                    shift: true,
+                    ..Modifiers::NONE
+                },
+            ),
+        ),
+        (Action::InsertLink, Keybinding::new(Key::K, Modifiers::CTRL)),
         (Action::NewTab, Keybinding::new(Key::T, Modifiers::CTRL)),
         (
             Action::CloseTab,
