@@ -1947,7 +1947,7 @@ impl eframe::App for GoatpadApp {
             .exact_size(34.0)
             .frame(
                 egui::Frame::new()
-                    .fill(ui.style().visuals.panel_fill)
+                    .fill(ui.style().visuals.panel_fill.gamma_multiply(0.99))
                     .inner_margin(egui::Margin {
                         left: 16,
                         right: 16,
