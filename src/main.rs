@@ -25,7 +25,8 @@ use persistence::{SaveRequest, SaveResult, start_writer_thread};
 use session::{Session, TabState, WindowGeom};
 use settings::Settings;
 use theme::{
-    FONT_OPTIONS, Theme, apply_theme, ensure_default_themes, install_fonts, load_themes, save_theme,
+    BORDER_COLOR, FONT_OPTIONS, Theme, apply_theme, ensure_default_themes, install_fonts,
+    load_themes, save_theme,
 };
 use workspace::Workspace;
 
@@ -1222,6 +1223,7 @@ impl eframe::App for GoatpadApp {
             .collect::<Vec<_>>();
         egui::Panel::top("title_bar")
             .exact_size(TITLE_BAR_HEIGHT)
+            .show_separator_line(false)
             .frame(
                 egui::Frame::new()
                     .fill(self.title_bar_color)
@@ -1943,8 +1945,10 @@ impl eframe::App for GoatpadApp {
                 )
             })
         });
-        egui::Panel::bottom("footer")
+
+        let footer_response = egui::Panel::bottom("footer")
             .exact_size(34.0)
+            .show_separator_line(false)
             .frame(
                 egui::Frame::new()
                     .fill(ui.style().visuals.panel_fill.gamma_multiply(0.99))
@@ -1963,44 +1967,67 @@ impl eframe::App for GoatpadApp {
                 }
                 ui.spacing_mut().item_spacing = egui::vec2(12.0, 0.0);
                 ui.spacing_mut().button_padding = egui::vec2(6.0, 3.0);
-                ui.horizontal(|ui| {
-                    ui.set_height(24.0);
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     if let Some(((line, column), character_count, line_ending)) = editor_stats {
-                        ui.label(format!("Ln {line}, Col {column}"));
-                        ui.separator();
-                        ui.label(format!("{character_count} chars"));
-                        ui.separator();
-                        ui.label(if active_is_markdown {
-                            "Markdown"
-                        } else {
-                            "Plain text"
+                        ui.scope(|ui| {
+                            ui.set_height(16.0);
+                            ui.label(format!("Ln {line}, Col {column}"));
+                            ui.separator();
+                            ui.label(format!("{character_count} characters"));
+                            ui.separator();
+                            ui.label(if active_is_markdown {
+                                "Markdown"
+                            } else {
+                                "Plain text"
+                            });
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label("UTF-8");
-                            ui.separator();
-                            ui.label(line_ending);
-                            ui.separator();
-                            if ui
-                                .button(egui_phosphor::regular::MAGNIFYING_GLASS_PLUS)
-                                .on_hover_text("Zoom in")
-                                .clicked()
-                            {
-                                self.zoom = (self.zoom + 0.1).min(3.0);
-                            }
-                            if ui
-                                .button(format!("{:.0}%", self.zoom * 100.0))
-                                .on_hover_text("Reset zoom")
-                                .clicked()
-                            {
-                                self.zoom = 1.0;
-                            }
-                            if ui
-                                .button(egui_phosphor::regular::MAGNIFYING_GLASS_MINUS)
-                                .on_hover_text("Zoom out")
-                                .clicked()
-                            {
-                                self.zoom = (self.zoom - 0.1).max(0.5);
-                            }
+                            ui.scope(|ui| {
+                                ui.set_height(16.0);
+                                ui.label("UTF-8");
+                                ui.separator();
+                                ui.label(line_ending);
+                                ui.separator();
+                            });
+
+                            ui.scope(|ui| {
+                                ui.set_height(24.0);
+                                ui.spacing_mut().item_spacing.x -= 12.0;
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            egui_phosphor::regular::MAGNIFYING_GLASS_PLUS,
+                                        )
+                                        .frame_when_inactive(false),
+                                    )
+                                    .on_hover_text("Zoom in")
+                                    .clicked()
+                                {
+                                    self.zoom = (self.zoom + 0.1).min(3.0);
+                                }
+                                if ui
+                                    .add(
+                                        egui::Button::new(format!("{:.0}%", self.zoom * 100.0))
+                                            .frame_when_inactive(false),
+                                    )
+                                    .on_hover_text("Reset zoom")
+                                    .clicked()
+                                {
+                                    self.zoom = 1.0;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            egui_phosphor::regular::MAGNIFYING_GLASS_MINUS,
+                                        )
+                                        .frame_when_inactive(false),
+                                    )
+                                    .on_hover_text("Zoom out")
+                                    .clicked()
+                                {
+                                    self.zoom = (self.zoom - 0.1).max(0.5);
+                                }
+                            });
                         });
                     } else {
                         ui.label("No tab open");
@@ -2008,15 +2035,21 @@ impl eframe::App for GoatpadApp {
                 });
             });
 
+        ui.painter().hline(
+            footer_response.response.rect.left()..=footer_response.response.rect.right(),
+            footer_response.response.rect.top(),
+            egui::Stroke::new(1.75, BORDER_COLOR),
+        );
+
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
                     .fill(ui.style().visuals.panel_fill)
                     .inner_margin(egui::Margin {
-                        left: 24,
-                        right: 24,
-                        top: 16,
-                        bottom: 20,
+                        top: 21,
+                        bottom: 21,
+                        right: 18,
+                        left: 18,
                     }),
             )
             .show(ui, |ui| {
