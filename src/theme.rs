@@ -117,9 +117,9 @@ impl Theme {
         let background = self.background.0.gamma_multiply(0.92);
         let secondary = self.secondary.0;
         Color32::from_rgb(
-            blend_channel(background.r(), secondary.r(), 0.2),
-            blend_channel(background.g(), secondary.g(), 0.2),
-            blend_channel(background.b(), secondary.b(), 0.2),
+            blend_channel(background.r(), secondary.r(), 0.02),
+            blend_channel(background.g(), secondary.g(), 0.02),
+            blend_channel(background.b(), secondary.b(), 0.02),
         )
     }
 
@@ -341,7 +341,7 @@ fn theme_path(paths: &AppPaths, name: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{Theme, ThemeColor, delete_theme, ensure_default_themes, load_themes, save_theme};
+    use super::{delete_theme, ensure_default_themes, load_themes, save_theme, Theme, ThemeColor};
     use crate::paths::AppPaths;
     use std::path::PathBuf;
     use uuid::Uuid;
@@ -393,11 +393,9 @@ mod tests {
         // Test delete_theme
         assert!(delete_theme(&paths, "My writing theme").unwrap());
         let themes_after = load_themes(&paths).unwrap();
-        assert!(
-            !themes_after
-                .iter()
-                .any(|theme| theme.name == "My writing theme")
-        );
+        assert!(!themes_after
+            .iter()
+            .any(|theme| theme.name == "My writing theme"));
 
         // Default themes cannot be deleted
         assert!(!delete_theme(&paths, "default-dark").unwrap());
