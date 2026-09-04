@@ -21,6 +21,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 - Tabbed Settings window with full theme CRUD (create, duplicate, edit, delete), theme-aware editor text, and separate System and Content font selections
 - Configurable keyboard shortcuts
 - Local storage with no account or cloud service required
+- Optional in-app MSI updates: a configurable HTTPS release manifest can check, download, verify, and launch upgrades from Settings → Updates
 
 ## Requirements
 
@@ -92,6 +93,23 @@ The version is read from `Cargo.toml`. To build the MSI and immediately open Win
 The installer adds Goatpad to the Start menu and desktop, and installs it under `Program Files`. Rebuilding and installing the MSI replaces the existing installation even when the version is unchanged, so local development builds can be reinstalled directly. For identifiable releases, update the package version in `Cargo.toml` before building.
 
 Close Goatpad before upgrading. Uninstalling or upgrading the application does not remove documents or settings from `%LOCALAPPDATA%\Goatpad`.
+
+## In-app updates
+
+Goatpad includes an opt-in update flow for MSI releases. In **Settings → Updates**, set the HTTPS URL of a JSON release manifest. Goatpad checks it at startup (unless disabled), lets the user manually check from the File menu, verifies the optional SHA-256 checksum, then closes and starts the elevated MSI upgrade.
+
+Host each release MSI and a manifest like this on HTTPS:
+
+```json
+{
+  "version": "1.2.0",
+  "msi_url": "https://downloads.example.com/goatpad/Goatpad-1.2.0-x64.msi",
+  "sha256": "put-the-lowercase-sha256-of-the-msi-here",
+  "notes": "New features and fixes."
+}
+```
+
+The `version` must be newer than the installed version. The MSI URL and manifest URL must both use HTTPS. For every release, increase `version` in `Cargo.toml`, run `build-msi.cmd`, upload the resulting MSI, calculate its SHA-256, and replace the hosted manifest.
 
 ## Keyboard shortcuts
 

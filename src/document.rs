@@ -105,7 +105,7 @@ impl Default for Document {
 
 #[cfg(test)]
 mod tests {
-    use super::{automatic_title, DocKind, Document, AUTO_TITLE_MAX_CHARS};
+    use super::{AUTO_TITLE_MAX_CHARS, DocKind, Document, automatic_title};
 
     #[test]
     fn new_documents_default_to_plain_text() {

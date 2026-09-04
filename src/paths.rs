@@ -41,9 +41,14 @@ impl AppPaths {
         self.data_dir.join("settings.json")
     }
 
+    pub fn updates_dir(&self) -> PathBuf {
+        self.data_dir.join("updates")
+    }
+
     fn ensure_exists(&self) -> io::Result<()> {
         fs::create_dir_all(self.documents_dir())?;
-        fs::create_dir_all(self.themes_dir())
+        fs::create_dir_all(self.themes_dir())?;
+        fs::create_dir_all(self.updates_dir())
     }
 
     #[cfg(test)]

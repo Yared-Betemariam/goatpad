@@ -16,6 +16,7 @@ mod persistence;
 mod session;
 mod settings;
 mod theme;
+mod updates;
 mod workspace;
 
 use document::DocKind;
@@ -28,6 +29,7 @@ use theme::{
     BORDER_COLOR, FONT_OPTIONS, Theme, apply_theme, ensure_default_themes, install_fonts,
     load_themes, save_theme,
 };
+use updates::{ReleaseManifest, UpdateEvent};
 use workspace::Workspace;
 
 const TITLE_BAR_HEIGHT: f32 = 42.0;
@@ -48,17 +50,29 @@ enum SettingsTab {
     #[default]
     Themes,
     Keyboard,
+    Updates,
 }
 
 impl SettingsTab {
-    const ALL: &[Self] = &[Self::Themes, Self::Keyboard];
+    const ALL: &[Self] = &[Self::Themes, Self::Keyboard, Self::Updates];
 
     fn title(self) -> &'static str {
         match self {
             Self::Themes => "Themes",
             Self::Keyboard => "Keyboard",
+            Self::Updates => "Updates",
         }
     }
+}
+
+#[derive(Clone)]
+enum UpdateStatus {
+    Idle,
+    Checking,
+    UpToDate,
+    Available(ReleaseManifest),
+    Downloading,
+    Error(String),
 }
 
 #[derive(Clone, Copy)]
@@ -105,6 +119,8 @@ struct GoatpadApp {
     workspace_index_dirty: bool,
     toasts: Vec<Toast>,
     zoom: f32,
+    update_status: UpdateStatus,
+    update_receiver: Option<Receiver<UpdateEvent>>,
 }
 
 impl GoatpadApp {
@@ -144,7 +160,7 @@ impl GoatpadApp {
             egui::ColorImage::from_rgba_unmultiplied([APP_ICON_SIZE, APP_ICON_SIZE], APP_ICON_RGBA),
             egui::TextureOptions::LINEAR,
         );
-        Ok(Self {
+        let mut app = Self {
             app_icon_texture,
             workspace,
             paths,
@@ -183,7 +199,13 @@ impl GoatpadApp {
                 })
                 .collect(),
             zoom: 1.0,
-        })
+            update_status: UpdateStatus::Idle,
+            update_receiver: None,
+        };
+        if app.settings.auto_check_updates && !app.settings.update_manifest_url.trim().is_empty() {
+            app.check_for_updates();
+        }
+        Ok(app)
     }
 
     fn report_error(&mut self, message: impl Into<String>) {
@@ -222,6 +244,134 @@ impl GoatpadApp {
                     self.report_error(error);
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+            }
+        }
+    }
+
+    fn check_for_updates(&mut self) {
+        let url = self.settings.update_manifest_url.trim().to_owned();
+        if url.is_empty() {
+            self.update_status = UpdateStatus::Error(
+                "Set an HTTPS update manifest URL before checking for updates".to_owned(),
+            );
+            return;
+        }
+        self.update_status = UpdateStatus::Checking;
+        self.update_receiver = Some(updates::check_in_background(url));
+    }
+
+    fn download_and_install_update(&mut self, release: ReleaseManifest) {
+        self.flush_all_now();
+        self.save_session();
+        self.update_status = UpdateStatus::Downloading;
+        self.update_receiver = Some(updates::download_in_background(release, self.paths.clone()));
+    }
+
+    fn poll_update_results(&mut self, ctx: &egui::Context) {
+        let Some(receiver) = &self.update_receiver else {
+            return;
+        };
+        match receiver.try_recv() {
+            Ok(UpdateEvent::Check(Ok(Some(release)))) => {
+                self.update_status = UpdateStatus::Available(release.clone());
+                self.report_success(format!("Goatpad {} is ready to install", release.version));
+                self.update_receiver = None;
+            }
+            Ok(UpdateEvent::Check(Ok(None))) => {
+                self.update_status = UpdateStatus::UpToDate;
+                self.update_receiver = None;
+            }
+            Ok(UpdateEvent::Check(Err(error)) | UpdateEvent::Download(Err(error))) => {
+                self.update_status = UpdateStatus::Error(error);
+                self.update_receiver = None;
+            }
+            Ok(UpdateEvent::Download(Ok(path))) => {
+                self.update_receiver = None;
+                match updates::install_after_exit(&path) {
+                    Ok(()) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                    Err(error) => self.update_status = UpdateStatus::Error(error),
+                }
+            }
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                self.update_status =
+                    UpdateStatus::Error("The update task stopped unexpectedly".to_owned());
+                self.update_receiver = None;
+            }
+        }
+    }
+
+    fn render_updates_settings(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Application updates");
+        ui.label(format!("Installed version: {}", updates::CURRENT_VERSION));
+        ui.add_space(6.0);
+        ui.label("Update manifest URL");
+        let url_response = ui.add(
+            egui::TextEdit::singleline(&mut self.settings.update_manifest_url)
+                .hint_text("https://example.com/goatpad/update.json")
+                .desired_width(420.0),
+        );
+        if url_response.changed() {
+            if let Err(error) = self.settings.save(&self.paths) {
+                self.report_error(format!("Could not save update settings: {error}"));
+            }
+        }
+        if ui
+            .checkbox(
+                &mut self.settings.auto_check_updates,
+                "Check automatically when Goatpad starts",
+            )
+            .changed()
+        {
+            if let Err(error) = self.settings.save(&self.paths) {
+                self.report_error(format!("Could not save update settings: {error}"));
+            }
+        }
+        ui.add_space(8.0);
+        match self.update_status.clone() {
+            UpdateStatus::Idle => {
+                ui.label("Configure a secure update manifest, then check for releases.");
+                if ui.button("Check for updates").clicked() {
+                    self.check_for_updates();
+                }
+            }
+            UpdateStatus::Checking => {
+                ui.spinner();
+                ui.label("Checking for updates…");
+            }
+            UpdateStatus::UpToDate => {
+                ui.label("You are up to date.");
+                if ui.button("Check again").clicked() {
+                    self.check_for_updates();
+                }
+            }
+            UpdateStatus::Available(release) => {
+                ui.label(
+                    egui::RichText::new(format!("Version {} is available", release.version))
+                        .strong(),
+                );
+                if !release.notes.trim().is_empty() {
+                    ui.label(&release.notes);
+                }
+                if ui.button("Download and install update").clicked() {
+                    self.download_and_install_update(release);
+                }
+                ui.label(
+                    egui::RichText::new(
+                        "Goatpad will close and Windows Installer will finish the upgrade.",
+                    )
+                    .weak(),
+                );
+            }
+            UpdateStatus::Downloading => {
+                ui.spinner();
+                ui.label("Downloading update… Goatpad will close when it is ready to install.");
+            }
+            UpdateStatus::Error(error) => {
+                ui.colored_label(egui::Color32::from_rgb(235, 105, 105), error);
+                if ui.button("Try again").clicked() {
+                    self.check_for_updates();
+                }
             }
         }
     }
@@ -1199,6 +1349,7 @@ impl eframe::App for GoatpadApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.poll_writer_results();
+        self.poll_update_results(&ctx);
         self.update_window_geometry(&ctx);
         self.dispatch_hotkeys(&ctx);
         let mut requested_switch = None;
@@ -1538,6 +1689,12 @@ impl eframe::App for GoatpadApp {
                         ui.separator();
                         if ui.button("Settings").clicked() {
                             self.settings_open = true;
+                            ui.close();
+                        }
+                        if ui.button("Check for updates").clicked() {
+                            self.settings_open = true;
+                            self.settings_tab = SettingsTab::Updates;
+                            self.check_for_updates();
                             ui.close();
                         }
                     });
@@ -2264,6 +2421,9 @@ impl eframe::App for GoatpadApp {
                         }
                         SettingsTab::Keyboard => {
                             self.render_keyboard_settings(ui);
+                        }
+                        SettingsTab::Updates => {
+                            self.render_updates_settings(ui);
                         }
                     }
                 });

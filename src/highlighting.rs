@@ -1,6 +1,6 @@
 use egui::{
-    text::{LayoutJob, TextFormat},
     Color32, FontFamily, FontId, Stroke,
+    text::{LayoutJob, TextFormat},
 };
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use std::ops::Range;
@@ -217,9 +217,11 @@ mod tests {
         assert!(formats.iter().any(|format| format.font_id.size >= 20.0));
         assert!(formats.iter().any(|format| format.italics));
         assert!(formats.iter().any(|format| format.font_id.size == 16.0));
-        assert!(formats
-            .iter()
-            .any(|format| format.font_id.family == egui::FontFamily::Monospace));
+        assert!(
+            formats
+                .iter()
+                .any(|format| format.font_id.family == egui::FontFamily::Monospace)
+        );
         assert!(formats.iter().any(|format| format.underline.width > 0.0));
     }
 }

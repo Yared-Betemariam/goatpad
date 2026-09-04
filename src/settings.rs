@@ -1,5 +1,5 @@
 use crate::{
-    hotkeys::{default_bindings, Action, Keybinding},
+    hotkeys::{Action, Keybinding, default_bindings},
     paths::AppPaths,
     persistence::atomic_write,
 };
@@ -15,6 +15,14 @@ pub struct Settings {
         deserialize_with = "deserialize_keybindings"
     )]
     pub keybindings: HashMap<Action, Keybinding>,
+    #[serde(default)]
+    pub update_manifest_url: String,
+    #[serde(default = "default_auto_check_updates")]
+    pub auto_check_updates: bool,
+}
+
+fn default_auto_check_updates() -> bool {
+    true
 }
 
 /// A bad user-defined shortcut must never make the editor unable to start.
@@ -45,6 +53,8 @@ impl Default for Settings {
         Self {
             theme: default_theme_name(),
             keybindings: default_bindings(),
+            update_manifest_url: String::new(),
+            auto_check_updates: default_auto_check_updates(),
         }
     }
 }
@@ -78,7 +88,7 @@ impl Settings {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_bindings, Settings};
+    use super::{Settings, default_bindings};
     use crate::{hotkeys::Action, paths::AppPaths};
     use std::fs;
 
@@ -98,9 +108,11 @@ mod tests {
             default_bindings()[&Action::ToggleBold]
         );
         assert_eq!(settings.keybindings[&Action::NewTab].to_string(), "Ctrl+N");
-        assert!(!fs::read_to_string(paths.settings_path())
-            .unwrap()
-            .contains("ControlLeft"));
+        assert!(
+            !fs::read_to_string(paths.settings_path())
+                .unwrap()
+                .contains("ControlLeft")
+        );
         fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    document::{unix_timestamp_millis, DocKind, Document},
+    document::{DocKind, Document, unix_timestamp_millis},
     paths::AppPaths,
     persistence::atomic_write,
 };
@@ -344,9 +344,11 @@ mod tests {
         assert_eq!(workspace.active_document().title, "Untitled");
         assert_eq!(workspace.active_document().kind, DocKind::Txt);
         assert!(paths.workspace_path().exists());
-        assert!(workspace
-            .document_path(workspace.active_document().id, DocKind::Txt)
-            .exists());
+        assert!(
+            workspace
+                .document_path(workspace.active_document().id, DocKind::Txt)
+                .exists()
+        );
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -451,9 +453,11 @@ mod tests {
         assert_eq!(target.documents[1].content, "Automatic name\nBody");
         assert_eq!(target.documents[2].title, "Custom name");
         assert!(target.documents[2].title_is_custom);
-        assert!(target.documents[1..]
-            .iter()
-            .all(|document| !source_ids.contains(&document.id)));
+        assert!(
+            target.documents[1..]
+                .iter()
+                .all(|document| !source_ids.contains(&document.id))
+        );
         let (reloaded, warnings) = Workspace::load(target_paths).unwrap();
         assert!(warnings.is_empty());
         assert_eq!(reloaded.documents.len(), 3);
