@@ -30,7 +30,7 @@ use theme::{
 use workspace::Workspace;
 
 const TITLE_BAR_HEIGHT: f32 = 42.0;
-const ACTION_BAR_HEIGHT: f32 = 42.0;
+const ACTION_BAR_HEIGHT: f32 = 38.0;
 const TITLE_BAR_SPACING: f32 = 6.0;
 const TITLE_CONTROL_WIDTH: f32 = 32.0;
 const WINDOW_BUTTON_WIDTH: f32 = 46.0;
@@ -1943,7 +1943,7 @@ impl eframe::App for GoatpadApp {
             })
         });
         egui::Panel::bottom("footer")
-            .exact_size(38.0)
+            .exact_size(34.0)
             .frame(
                 egui::Frame::new()
                     .fill(ui.style().visuals.panel_fill)
@@ -1955,6 +1955,11 @@ impl eframe::App for GoatpadApp {
                     }),
             )
             .show(ui, |ui| {
+                let footer_text_color = ui.visuals().text_color().gamma_multiply(0.8);
+                ui.visuals_mut().override_text_color = Some(footer_text_color);
+                for font_id in ui.style_mut().text_styles.values_mut() {
+                    font_id.size *= 0.8;
+                }
                 ui.spacing_mut().item_spacing = egui::vec2(12.0, 0.0);
                 ui.spacing_mut().button_padding = egui::vec2(6.0, 3.0);
                 ui.horizontal(|ui| {
@@ -2199,7 +2204,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let session = Session::load(&paths)?;
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1000.0, 700.0])
-        .with_min_inner_size([640.0, 420.0])
+        .with_min_inner_size([320.0, 210.0])
         .with_title("Goatpad")
         .with_icon(goatpad_icon())
         .with_decorations(false);
