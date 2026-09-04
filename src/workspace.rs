@@ -342,10 +342,11 @@ mod tests {
         assert!(warnings.is_empty());
         assert_eq!(workspace.documents.len(), 1);
         assert_eq!(workspace.active_document().title, "Untitled");
+        assert_eq!(workspace.active_document().kind, DocKind::Txt);
         assert!(paths.workspace_path().exists());
         assert!(
             workspace
-                .document_path(workspace.active_document().id, DocKind::Md)
+            .document_path(workspace.active_document().id, DocKind::Txt)
                 .exists()
         );
         fs::remove_dir_all(directory).unwrap();
@@ -387,7 +388,7 @@ mod tests {
         let (workspace, warnings) = Workspace::load(paths.clone()).unwrap();
         assert!(warnings.is_empty());
         let id = workspace.active_document().id;
-        let path = workspace.document_path(id, DocKind::Md);
+        let path = workspace.document_path(id, DocKind::Txt);
         fs::remove_file(&path).unwrap();
 
         let (reloaded, warnings) = Workspace::load(paths).unwrap();

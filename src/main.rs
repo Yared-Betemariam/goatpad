@@ -1432,21 +1432,21 @@ impl eframe::App for GoatpadApp {
                             ui.close();
                         }
                         ui.separator();
-                        if ui.button("Tabs list…").clicked() {
+                        if ui.button("Tabs list").clicked() {
                             self.tabs_list_open = true;
                             ui.close();
                         }
                         ui.separator();
-                        if ui.button("Import notes…").clicked() {
+                        if ui.button("Import notes").clicked() {
                             self.import_notes();
                             ui.close();
                         }
-                        if ui.button("Export notes…").clicked() {
+                        if ui.button("Export notes").clicked() {
                             self.export_notes();
                             ui.close();
                         }
                         ui.separator();
-                        if ui.button("Settings…").clicked() {
+                        if ui.button("Settings").clicked() {
                             self.settings_open = true;
                             ui.close();
                         }

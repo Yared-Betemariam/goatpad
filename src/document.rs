@@ -6,8 +6,8 @@ use uuid::Uuid;
 #[serde(rename_all = "lowercase")]
 pub enum DocKind {
     #[default]
-    Md,
     Txt,
+    Md,
 }
 
 impl DocKind {
@@ -39,7 +39,7 @@ impl Document {
             id: Uuid::new_v4(),
             title: UNTITLED_TITLE.to_owned(),
             title_is_custom: false,
-            kind: DocKind::Md,
+            kind: DocKind::Txt,
             content: String::new(),
             last_opened_at: unix_timestamp_millis(),
             dirty: false,
@@ -105,7 +105,12 @@ impl Default for Document {
 
 #[cfg(test)]
 mod tests {
-    use super::{AUTO_TITLE_MAX_CHARS, Document, automatic_title};
+    use super::{AUTO_TITLE_MAX_CHARS, DocKind, Document, automatic_title};
+
+    #[test]
+    fn new_documents_default_to_plain_text() {
+        assert_eq!(Document::new_untitled().kind, DocKind::Txt);
+    }
 
     #[test]
     fn automatic_title_uses_the_trimmed_first_line() {
