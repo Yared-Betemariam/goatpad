@@ -262,7 +262,7 @@ pub fn apply_theme(ctx: &egui::Context, theme: &Theme) {
     visuals.extreme_bg_color = background;
     visuals.faint_bg_color = secondary.gamma_multiply(0.13);
     visuals.code_bg_color = secondary.gamma_multiply(0.20);
-    visuals.selection.bg_fill = egui::Color32::TRANSPARENT;
+    // visuals.selection.bg_fill = primary.gamma_multiply(0.50);
     visuals.window_stroke.color = BORDER_COLOR;
     visuals.hyperlink_color = primary;
     visuals.widgets.inactive.bg_fill = secondary.gamma_multiply(0.20);
@@ -274,7 +274,7 @@ pub fn apply_theme(ctx: &egui::Context, theme: &Theme) {
     visuals.widgets.hovered.bg_stroke.color = BORDER_COLOR;
     visuals.widgets.active.bg_stroke.color = BORDER_COLOR;
     visuals.widgets.open.bg_stroke.color = BORDER_COLOR;
-    visuals.selection.stroke.color = BORDER_COLOR;
+    // visuals.selection.stroke.color = BORDER_COLOR;
     ctx.set_visuals(visuals);
     ctx.style_mut_of(egui_theme, |style| {
         for font_id in style.text_styles.values_mut() {

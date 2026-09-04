@@ -32,11 +32,11 @@ use workspace::Workspace;
 
 const TITLE_BAR_HEIGHT: f32 = 42.0;
 const TITLE_CONTENT_HEIGHT: f32 = 24.0;
-const ACTION_BAR_HEIGHT: f32 = 34.0;
+const ACTION_BAR_HEIGHT: f32 = 36.0;
 const TITLE_BAR_SPACING: f32 = 6.0;
 const TITLE_CONTROL_WIDTH: f32 = 32.0;
 const WINDOW_BUTTON_WIDTH: f32 = 46.0;
-const MIN_DRAG_WIDTH: f32 = 48.0;
+const MIN_DRAG_WIDTH: f32 = 12.0;
 const RESIZE_BORDER_WIDTH: f32 = 5.0;
 const RESIZE_CORNER_SIZE: f32 = 14.0;
 const APP_ICON_SIZE: usize = 64;
@@ -337,7 +337,7 @@ impl GoatpadApp {
 
             ui.horizontal(|ui| {
                 ui.label("Name:");
-                ui.add(egui::TextEdit::singleline(&mut draft.name).desired_width(180.0));
+                ui.add(egui::TextEdit::singleline(&mut draft.name).desired_width(240.0));
             });
 
             ui.add_space(6.0);
@@ -1248,7 +1248,7 @@ impl eframe::App for GoatpadApp {
                             + 3.0 * WINDOW_BUTTON_WIDTH
                             + MIN_DRAG_WIDTH
                             + 7.0 * TITLE_BAR_SPACING;
-                        let tabs_width = (ui.available_width() - fixed_width).max(140.0);
+                        let tabs_width = (ui.available_width() - fixed_width).max(240.0);
 
                         egui::ScrollArea::horizontal()
                             .id_salt("title_bar_tabs")
@@ -1262,7 +1262,7 @@ impl eframe::App for GoatpadApp {
                                         if self.renaming_document == Some(*id) {
                                             let response = ui.add(
                                                 egui::TextEdit::singleline(&mut self.rename_buffer)
-                                                    .desired_width(140.0)
+                                                    .desired_width(180.0)
                                                     .hint_text("Note title"),
                                             );
                                             if self.focus_rename {
@@ -1290,64 +1290,83 @@ impl eframe::App for GoatpadApp {
                                             }
                                         } else {
                                             let is_active = self.session.active_tab == Some(*id);
-                                            let response = if is_active {
-                                                egui::Frame::new()
-                                                    .fill(self.theme_draft.background.0)
-                                                    .corner_radius(egui::CornerRadius {
-                                                        nw: 5,
-                                                        ne: 5,
-                                                        sw: 0,
-                                                        se: 0,
-                                                    })
-                                                    .inner_margin(egui::Margin {
-                                                        right: 12,
-                                                        left: 12,
-                                                        top: 8,
-                                                        bottom: 0,
-                                                    })
-                                                    .show(ui, |ui| {
-                                                        let visuals = &mut ui.style_mut().visuals;
-
-                                                        visuals.widgets.active.bg_fill =
-                                                            egui::Color32::TRANSPARENT;
-                                                        visuals.widgets.hovered.bg_fill =
-                                                            egui::Color32::TRANSPARENT;
-                                                        visuals.widgets.active.fg_stroke =
-                                                            egui::Stroke::new(
-                                                                1.0,
-                                                                self.theme_draft.primary.0,
-                                                            );
-
-                                                        visuals.widgets.hovered.fg_stroke =
-                                                            egui::Stroke::new(
-                                                                1.0,
-                                                                self.theme_draft.primary.0,
-                                                            );
-
-                                                        let close_response = ui
-                                                            .add(
-                                                                egui::Button::new(
-                                                                    egui_phosphor::regular::X,
+                                            let response = egui::Frame::new()
+                                                .fill(if is_active {
+                                                    self.theme_draft.background.0
+                                                } else {
+                                                    egui::Color32::TRANSPARENT
+                                                })
+                                                .corner_radius(egui::CornerRadius {
+                                                    nw: 5,
+                                                    ne: 5,
+                                                    sw: 0,
+                                                    se: 0,
+                                                })
+                                                .inner_margin(egui::Margin {
+                                                    right: 12,
+                                                    left: 12,
+                                                    top: 5,
+                                                    bottom: 3,
+                                                })
+                                                .show(ui, |ui| {
+                                                    let tab_label_size =
+                                                        self.theme_draft.font_size * 0.9;
+                                                    if is_active {
+                                                        ui.with_layout(
+                                                            egui::Layout::left_to_right(
+                                                                egui::Align::Center,
+                                                            ),
+                                                            |ui| {
+                                                                let label_response = ui.label(
+                                                                    egui::RichText::new(title)
+                                                                        .size(tab_label_size)
+                                                                        .color(
+                                                                            self.theme_draft
+                                                                                .primary
+                                                                                .0,
+                                                                        ),
+                                                                );
+                                                                let close_response = ui
+                                                                .add(
+                                                                    egui::Button::new(
+                                                                        egui_phosphor::regular::X,
+                                                                    )
+                                                                    .frame_when_inactive(false)
+                                                                    .corner_radius(5)
+                                                                    .min_size(egui::vec2(
+                                                                        24.0, 24.0,
+                                                                    )),
                                                                 )
-                                                                .frame_when_inactive(false)
-                                                                .corner_radius(5)
-                                                                .min_size(egui::vec2(24.0, 24.0)),
-                                                            )
-                                                            .on_hover_text("Close tab");
+                                                                .on_hover_text("Close tab");
 
-                                                        if close_response.middle_clicked()
-                                                            || close_response.clicked()
-                                                        {
-                                                            requested_close = Some(*id);
-                                                        }
+                                                                if close_response.middle_clicked()
+                                                                    || close_response.clicked()
+                                                                {
+                                                                    requested_close = Some(*id);
+                                                                }
 
-                                                        ui.selectable_label(true, title)
-                                                    })
-                                                    .inner
-                                            } else {
-                                                ui.selectable_label(false, title)
-                                            }
-                                            .on_hover_text("Double-click to rename");
+                                                                label_response
+                                                            },
+                                                        )
+                                                        .inner
+                                                    } else {
+                                                        ui.with_layout(
+                                                            egui::Layout::left_to_right(
+                                                                egui::Align::Center,
+                                                            ),
+                                                            |ui| {
+                                                                ui.selectable_label(
+                                                                    false,
+                                                                    egui::RichText::new(title)
+                                                                        .size(tab_label_size),
+                                                                )
+                                                            },
+                                                        )
+                                                        .inner
+                                                    }
+                                                })
+                                                .inner
+                                                .on_hover_text("Double-click to rename");
 
                                             if response.clicked() {
                                                 requested_switch = Some(*id);
@@ -1363,7 +1382,7 @@ impl eframe::App for GoatpadApp {
 
                     if ui
                         .add_sized(
-                            [TITLE_CONTROL_WIDTH, TITLE_CONTENT_HEIGHT],
+                            [TITLE_CONTENT_HEIGHT, TITLE_CONTENT_HEIGHT],
                             egui::Button::new(egui_phosphor::regular::PLUS)
                                 .frame_when_inactive(false)
                                 .corner_radius(5)
@@ -1896,7 +1915,8 @@ impl eframe::App for GoatpadApp {
 
                     // Region 3: MD/TXT Switcher (right-aligned)
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.spacing_mut().button_padding = egui::vec2(10.0, 4.0);
+                        ui.spacing_mut().item_spacing.x -= 6.0;
+                        ui.spacing_mut().button_padding = egui::vec2(6.0, 4.0);
                         if let Some(document_id) = self.session.active_tab {
                             if let Some(document) = self.workspace.document(document_id) {
                                 let mut requested_kind = document.kind;
