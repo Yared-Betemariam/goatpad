@@ -31,6 +31,7 @@ use theme::{
 use workspace::Workspace;
 
 const TITLE_BAR_HEIGHT: f32 = 42.0;
+const TITLE_CONTENT_HEIGHT: f32 = 24.0;
 const ACTION_BAR_HEIGHT: f32 = 34.0;
 const TITLE_BAR_SPACING: f32 = 6.0;
 const TITLE_CONTROL_WIDTH: f32 = 32.0;
@@ -966,10 +967,10 @@ impl GoatpadApp {
 /// It is purely decorative, matching Notepad's non-interactive app icon.
 fn show_app_icon(ui: &mut egui::Ui, app_icon_texture: &egui::TextureHandle) {
     let (rect, _response) = ui.allocate_exact_size(
-        egui::vec2(TITLE_CONTROL_WIDTH, TITLE_BAR_HEIGHT),
+        egui::vec2(TITLE_CONTROL_WIDTH, TITLE_CONTENT_HEIGHT),
         egui::Sense::hover(),
     );
-    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(22.0));
+    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(20.0));
     ui.painter().image(
         app_icon_texture.id(),
         icon_rect,
@@ -989,7 +990,7 @@ enum WindowControlKind {
 fn window_control_button(ui: &mut egui::Ui, kind: WindowControlKind) -> egui::Response {
     let is_close = kind == WindowControlKind::Close;
     let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(WINDOW_BUTTON_WIDTH, TITLE_BAR_HEIGHT),
+        egui::vec2(WINDOW_BUTTON_WIDTH, TITLE_CONTENT_HEIGHT),
         egui::Sense::click(),
     );
     let pointer_down = response.is_pointer_button_down_on();
@@ -1237,16 +1238,18 @@ impl eframe::App for GoatpadApp {
             )
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(TITLE_BAR_SPACING, 0.0);
-                ui.horizontal(|ui| {
-                    ui.set_height(TITLE_BAR_HEIGHT);
-                    show_app_icon(ui, &self.app_icon_texture);
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        show_app_icon(ui, &self.app_icon_texture);
+                    });
 
                     if !tabs.is_empty() {
                         let fixed_width = 2.0 * TITLE_CONTROL_WIDTH
                             + 3.0 * WINDOW_BUTTON_WIDTH
                             + MIN_DRAG_WIDTH
                             + 7.0 * TITLE_BAR_SPACING;
-                        let tabs_width = (ui.available_width() - fixed_width).max(120.0);
+                        let tabs_width = (ui.available_width() - fixed_width).max(140.0);
+
                         egui::ScrollArea::horizontal()
                             .id_salt("title_bar_tabs")
                             .max_width(tabs_width)
@@ -1286,30 +1289,71 @@ impl eframe::App for GoatpadApp {
                                                 finish_tab_rename = true;
                                             }
                                         } else {
-                                            let response = ui
-                                                .selectable_label(
-                                                    self.session.active_tab == Some(*id),
-                                                    title,
-                                                )
-                                                .on_hover_text("Double-click to rename");
+                                            let is_active = self.session.active_tab == Some(*id);
+                                            let response = if is_active {
+                                                egui::Frame::new()
+                                                    .fill(self.theme_draft.background.0)
+                                                    .corner_radius(egui::CornerRadius {
+                                                        nw: 5,
+                                                        ne: 5,
+                                                        sw: 0,
+                                                        se: 0,
+                                                    })
+                                                    .inner_margin(egui::Margin {
+                                                        right: 12,
+                                                        left: 12,
+                                                        top: 8,
+                                                        bottom: 0,
+                                                    })
+                                                    .show(ui, |ui| {
+                                                        let visuals = &mut ui.style_mut().visuals;
+
+                                                        visuals.widgets.active.bg_fill =
+                                                            egui::Color32::TRANSPARENT;
+                                                        visuals.widgets.hovered.bg_fill =
+                                                            egui::Color32::TRANSPARENT;
+                                                        visuals.widgets.active.fg_stroke =
+                                                            egui::Stroke::new(
+                                                                1.0,
+                                                                self.theme_draft.primary.0,
+                                                            );
+
+                                                        visuals.widgets.hovered.fg_stroke =
+                                                            egui::Stroke::new(
+                                                                1.0,
+                                                                self.theme_draft.primary.0,
+                                                            );
+
+                                                        let close_response = ui
+                                                            .add(
+                                                                egui::Button::new(
+                                                                    egui_phosphor::regular::X,
+                                                                )
+                                                                .frame_when_inactive(false)
+                                                                .corner_radius(5)
+                                                                .min_size(egui::vec2(24.0, 24.0)),
+                                                            )
+                                                            .on_hover_text("Close tab");
+
+                                                        if close_response.middle_clicked()
+                                                            || close_response.clicked()
+                                                        {
+                                                            requested_close = Some(*id);
+                                                        }
+
+                                                        ui.selectable_label(true, title)
+                                                    })
+                                                    .inner
+                                            } else {
+                                                ui.selectable_label(false, title)
+                                            }
+                                            .on_hover_text("Double-click to rename");
+
                                             if response.clicked() {
                                                 requested_switch = Some(*id);
                                             }
                                             if response.double_clicked() {
                                                 requested_rename = Some(*id);
-                                            }
-                                            let close_response = ui
-                                                .add(
-                                                    egui::Button::new(egui_phosphor::regular::X)
-                                                        .frame(false)
-                                                        .min_size(egui::vec2(18.0, 18.0)),
-                                                )
-                                                .on_hover_text("Close tab");
-                                            if response.middle_clicked()
-                                                || close_response.middle_clicked()
-                                                || close_response.clicked()
-                                            {
-                                                requested_close = Some(*id);
                                             }
                                         }
                                     }
@@ -1319,8 +1363,11 @@ impl eframe::App for GoatpadApp {
 
                     if ui
                         .add_sized(
-                            [TITLE_CONTROL_WIDTH, TITLE_CONTROL_WIDTH],
-                            egui::Button::new(egui_phosphor::regular::PLUS).frame(false),
+                            [TITLE_CONTROL_WIDTH, TITLE_CONTENT_HEIGHT],
+                            egui::Button::new(egui_phosphor::regular::PLUS)
+                                .frame_when_inactive(false)
+                                .corner_radius(5)
+                                .min_size(egui::vec2(24.0, 24.0)),
                         )
                         .on_hover_text("New tab")
                         .clicked()
@@ -1341,10 +1388,14 @@ impl eframe::App for GoatpadApp {
                         }
                     }
 
-                    if window_control_button(ui, WindowControlKind::Minimize)
-                        .on_hover_text("Minimize")
-                        .clicked()
-                    {
+                    let minimize_response = ui
+                        .allocate_ui_with_layout(
+                            egui::vec2(WINDOW_BUTTON_WIDTH, TITLE_BAR_HEIGHT),
+                            egui::Layout::top_down(egui::Align::Center),
+                            |ui| window_control_button(ui, WindowControlKind::Minimize),
+                        )
+                        .inner;
+                    if minimize_response.on_hover_text("Minimize").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                     }
                     let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
@@ -1353,16 +1404,27 @@ impl eframe::App for GoatpadApp {
                     } else {
                         WindowControlKind::Maximize
                     };
-                    if window_control_button(ui, max_kind)
+                    let maximize_response = ui
+                        .allocate_ui_with_layout(
+                            egui::vec2(WINDOW_BUTTON_WIDTH, TITLE_BAR_HEIGHT),
+                            egui::Layout::top_down(egui::Align::Center),
+                            |ui| window_control_button(ui, max_kind),
+                        )
+                        .inner;
+                    if maximize_response
                         .on_hover_text(if maximized { "Restore" } else { "Maximize" })
                         .clicked()
                     {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
                     }
-                    if window_control_button(ui, WindowControlKind::Close)
-                        .on_hover_text("Close")
-                        .clicked()
-                    {
+                    let close_response = ui
+                        .allocate_ui_with_layout(
+                            egui::vec2(WINDOW_BUTTON_WIDTH, TITLE_BAR_HEIGHT),
+                            egui::Layout::top_down(egui::Align::Center),
+                            |ui| window_control_button(ui, WindowControlKind::Close),
+                        )
+                        .inner;
+                    if close_response.on_hover_text("Close").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });

@@ -262,7 +262,7 @@ pub fn apply_theme(ctx: &egui::Context, theme: &Theme) {
     visuals.extreme_bg_color = background;
     visuals.faint_bg_color = secondary.gamma_multiply(0.13);
     visuals.code_bg_color = secondary.gamma_multiply(0.20);
-    visuals.selection.bg_fill = primary.gamma_multiply(0.55);
+    visuals.selection.bg_fill = egui::Color32::TRANSPARENT;
     visuals.window_stroke.color = BORDER_COLOR;
     visuals.hyperlink_color = primary;
     visuals.widgets.inactive.bg_fill = secondary.gamma_multiply(0.20);

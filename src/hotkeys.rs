@@ -268,7 +268,7 @@ fn parse_key(name: &str) -> Option<Key> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Action, Keybinding, default_bindings, keybinding_from_event};
+    use super::{default_bindings, keybinding_from_event, Action, Keybinding};
     use egui::{Event, Key, Modifiers};
 
     #[test]

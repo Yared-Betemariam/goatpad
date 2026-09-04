@@ -1,5 +1,5 @@
 use crate::{
-    hotkeys::{Action, Keybinding, default_bindings},
+    hotkeys::{default_bindings, Action, Keybinding},
     paths::AppPaths,
     persistence::atomic_write,
 };
@@ -78,7 +78,7 @@ impl Settings {
 
 #[cfg(test)]
 mod tests {
-    use super::{Settings, default_bindings};
+    use super::{default_bindings, Settings};
     use crate::{hotkeys::Action, paths::AppPaths};
     use std::fs;
 
@@ -98,11 +98,9 @@ mod tests {
             default_bindings()[&Action::ToggleBold]
         );
         assert_eq!(settings.keybindings[&Action::NewTab].to_string(), "Ctrl+N");
-        assert!(
-            !fs::read_to_string(paths.settings_path())
-                .unwrap()
-                .contains("ControlLeft")
-        );
+        assert!(!fs::read_to_string(paths.settings_path())
+            .unwrap()
+            .contains("ControlLeft"));
         fs::remove_dir_all(directory).unwrap();
     }
 }
