@@ -31,7 +31,7 @@ use theme::{
 use workspace::Workspace;
 
 const TITLE_BAR_HEIGHT: f32 = 42.0;
-const ACTION_BAR_HEIGHT: f32 = 38.0;
+const ACTION_BAR_HEIGHT: f32 = 34.0;
 const TITLE_BAR_SPACING: f32 = 6.0;
 const TITLE_CONTROL_WIDTH: f32 = 32.0;
 const WINDOW_BUTTON_WIDTH: f32 = 46.0;
@@ -1246,7 +1246,7 @@ impl eframe::App for GoatpadApp {
                             + 3.0 * WINDOW_BUTTON_WIDTH
                             + MIN_DRAG_WIDTH
                             + 7.0 * TITLE_BAR_SPACING;
-                        let tabs_width = (ui.available_width() - fixed_width).max(80.0);
+                        let tabs_width = (ui.available_width() - fixed_width).max(120.0);
                         egui::ScrollArea::horizontal()
                             .id_salt("title_bar_tabs")
                             .max_width(tabs_width)
@@ -1327,28 +1327,15 @@ impl eframe::App for GoatpadApp {
                     {
                         requested_new_tab = true;
                     }
-                    if ui
-                        .add_sized(
-                            [TITLE_CONTROL_WIDTH, TITLE_CONTROL_WIDTH],
-                            egui::Button::new(egui_phosphor::regular::LIST).frame(false),
-                        )
-                        .on_hover_text("Tabs list")
-                        .clicked()
-                    {
-                        self.tabs_list_open = !self.tabs_list_open;
-                    }
-
                     let drag_width = (ui.available_width()
                         - 3.0 * WINDOW_BUTTON_WIDTH
                         - 3.0 * TITLE_BAR_SPACING)
                         .max(0.0);
                     if drag_width > 0.0 {
-                        let drag_response = ui
-                            .allocate_response(
-                                egui::vec2(drag_width, TITLE_BAR_HEIGHT),
-                                egui::Sense::drag(),
-                            )
-                            .on_hover_cursor(egui::CursorIcon::Grab);
+                        let drag_response = ui.allocate_response(
+                            egui::vec2(drag_width, TITLE_BAR_HEIGHT),
+                            egui::Sense::drag(),
+                        );
                         if drag_response.drag_started_by(egui::PointerButton::Primary) {
                             ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
                         }
@@ -1404,19 +1391,38 @@ impl eframe::App for GoatpadApp {
                 egui::Frame::new()
                     .fill(ui.style().visuals.panel_fill)
                     .inner_margin(egui::Margin {
-                        left: 14,
-                        right: 14,
-                        top: 4,
-                        bottom: 4,
+                        left: 10,
+                        right: 10,
+                        top: 0,
+                        bottom: 0,
                     }),
             )
             .show(ui, |ui| {
+                // ui.visuals_mut().button_frame = false;
+                let widgets = &mut ui.visuals_mut().widgets;
+                widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+                widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                // optional: also flatten it while the menu is open, not just at rest
+                widgets.open.weak_bg_fill = egui::Color32::TRANSPARENT;
+                widgets.open.bg_stroke = egui::Stroke::NONE;
                 ui.spacing_mut().item_spacing = egui::vec2(6.0, 0.0);
                 ui.spacing_mut().button_padding = egui::vec2(7.0, 4.0);
-                ui.horizontal(|ui| {
-                    ui.set_height(ACTION_BAR_HEIGHT - 8.0);
+
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.set_height(ACTION_BAR_HEIGHT);
 
                     // Region 1: Actions
+                    if ui
+                        .add(
+                            egui::Button::new(egui_phosphor::regular::LIST)
+                                .min_size(egui::vec2(24.0, 24.0))
+                                .frame_when_inactive(false),
+                        )
+                        .on_hover_text("Tabs list")
+                        .clicked()
+                    {
+                        self.tabs_list_open = !self.tabs_list_open;
+                    }
                     ui.menu_button("File", |ui| {
                         if ui.button("New tab").clicked() {
                             self.create_tab();
@@ -1795,7 +1801,7 @@ impl eframe::App for GoatpadApp {
                             }
                             if ui
                                 .button(egui_phosphor::regular::TEXT_STRIKETHROUGH)
-                                .on_hover_text("Strikethrough (Ctrl+Shift+X)")
+                                .on_hover_text("Strike-through (Ctrl+Shift+X)")
                                 .clicked()
                             {
                                 self.apply_formatting(&ctx, Action::ToggleStrikethrough);

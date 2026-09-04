@@ -112,7 +112,7 @@ Formatting shortcuts only apply to Markdown notes. Shortcuts can be changed from
 
 Goatpad unifies the application menus and formatting tools into a single, height-constant action bar:
 
-- **Actions**: File, Edit, and View menus on the left.
+- **Actions**: Tabs List, followed by the File, Edit, and View menus on the left.
 - **Markdown options**: A heading dropdown (H1–H3), list dropdown (bulleted/numbered), bold, italic, strikethrough, link, table, and clear-formatting controls in the center. These tools are rendered only when the active note is Markdown (`MD`); for plain-text notes (`TXT`), the region collapses without changing the bar's height. On constrained window widths, tools collapse cleanly into a "Format" overflow menu.
 - **Document switcher**: An immediate `MD`/`TXT` switch at the right edge of the bar (also switchable via the `View` menu).
 

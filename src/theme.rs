@@ -17,7 +17,7 @@ pub const FONT_OPTIONS: &[&str] = &[
     "Monospace",
 ];
 
-pub const BORDER_COLOR: Color32 = Color32::from_rgba_premultiplied(48, 48, 48, 75);
+pub const BORDER_COLOR: Color32 = Color32::from_rgba_premultiplied(48, 48, 48, 65);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThemeColor(pub Color32);
@@ -349,7 +349,7 @@ fn theme_path(paths: &AppPaths, name: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{delete_theme, ensure_default_themes, load_themes, save_theme, Theme, ThemeColor};
+    use super::{Theme, ThemeColor, delete_theme, ensure_default_themes, load_themes, save_theme};
     use crate::paths::AppPaths;
     use std::path::PathBuf;
     use uuid::Uuid;
@@ -401,9 +401,11 @@ mod tests {
         // Test delete_theme
         assert!(delete_theme(&paths, "My writing theme").unwrap());
         let themes_after = load_themes(&paths).unwrap();
-        assert!(!themes_after
-            .iter()
-            .any(|theme| theme.name == "My writing theme"));
+        assert!(
+            !themes_after
+                .iter()
+                .any(|theme| theme.name == "My writing theme")
+        );
 
         // Default themes cannot be deleted
         assert!(!delete_theme(&paths, "default-dark").unwrap());
