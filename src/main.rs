@@ -1019,7 +1019,7 @@ fn window_control_button(ui: &mut egui::Ui, kind: WindowControlKind) -> egui::Re
             );
         }
         WindowControlKind::Maximize => {
-            let box_rect = egui::Rect::from_center_size(center, egui::vec2(10.0, 10.0));
+            let box_rect = egui::Rect::from_center_size(center, egui::vec2(8.0, 8.0));
             ui.painter().rect_stroke(
                 box_rect,
                 0.0,
@@ -1225,6 +1225,7 @@ impl eframe::App for GoatpadApp {
             .frame(
                 egui::Frame::new()
                     .fill(self.title_bar_color)
+                    .stroke(egui::Stroke::NONE)
                     .inner_margin(egui::Margin {
                         left: 10,
                         right: 0,

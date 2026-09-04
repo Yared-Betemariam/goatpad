@@ -162,6 +162,8 @@ cargo test
 cargo fmt -- --check
 ```
 
+The app-wide border color and opacity are centralized in `src/theme.rs` as `BORDER_COLOR`; the title bar intentionally has no border.
+
 ## Current limitations
 
 - MSI packaging currently targets 64-bit Windows

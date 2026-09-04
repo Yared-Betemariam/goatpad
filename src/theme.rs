@@ -17,6 +17,8 @@ pub const FONT_OPTIONS: &[&str] = &[
     "Monospace",
 ];
 
+pub const BORDER_COLOR: Color32 = Color32::from_rgba_premultiplied(48, 48, 48, 75);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThemeColor(pub Color32);
 
@@ -261,12 +263,18 @@ pub fn apply_theme(ctx: &egui::Context, theme: &Theme) {
     visuals.faint_bg_color = secondary.gamma_multiply(0.13);
     visuals.code_bg_color = secondary.gamma_multiply(0.20);
     visuals.selection.bg_fill = primary.gamma_multiply(0.55);
-    visuals.selection.stroke.color = primary;
+    visuals.window_stroke.color = BORDER_COLOR;
     visuals.hyperlink_color = primary;
     visuals.widgets.inactive.bg_fill = secondary.gamma_multiply(0.20);
     visuals.widgets.hovered.bg_fill = secondary.gamma_multiply(0.42);
     visuals.widgets.active.bg_fill = primary.gamma_multiply(0.60);
     visuals.widgets.open.bg_fill = secondary.gamma_multiply(0.30);
+    visuals.widgets.noninteractive.bg_stroke.color = BORDER_COLOR;
+    visuals.widgets.inactive.bg_stroke.color = BORDER_COLOR;
+    visuals.widgets.hovered.bg_stroke.color = BORDER_COLOR;
+    visuals.widgets.active.bg_stroke.color = BORDER_COLOR;
+    visuals.widgets.open.bg_stroke.color = BORDER_COLOR;
+    visuals.selection.stroke.color = BORDER_COLOR;
     ctx.set_visuals(visuals);
     ctx.style_mut_of(egui_theme, |style| {
         for font_id in style.text_styles.values_mut() {
