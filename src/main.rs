@@ -2411,9 +2411,12 @@ impl eframe::App for GoatpadApp {
                     .id_salt(("editor-scroll", document_id))
                     .vertical_scroll_offset(self.scroll_offset)
                     .show(ui, |ui| {
+                        let available_height = ui.available_height();
+                        let line_height = 20.0 * zoom;
                         egui::TextEdit::multiline(&mut self.workspace.active_document_mut().content)
                             .id(editor_id)
-                            .desired_width(f32::INFINITY)
+                            .desired_width(ui.available_width())
+                            .desired_rows((available_height / line_height).ceil().max(1.0) as usize)
                             .frame(egui::Frame::NONE)
                             .layouter(&mut layouter)
                             .show(ui)
