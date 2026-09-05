@@ -33,7 +33,8 @@ use updates::{ReleaseManifest, UpdateEvent};
 use workspace::Workspace;
 
 const TITLE_BAR_HEIGHT: f32 = 42.0;
-const TITLE_CONTENT_HEIGHT: f32 = 24.0;
+const TITLE_CONTENT_HEIGHT: f32 = 30.0;
+const TITLE_TAB_HEIGHT: f32 = TITLE_BAR_HEIGHT - 8.0;
 const ACTION_BAR_HEIGHT: f32 = 36.0;
 const TITLE_BAR_SPACING: f32 = 6.0;
 const TITLE_CONTROL_WIDTH: f32 = 32.0;
@@ -1132,7 +1133,11 @@ enum WindowControlKind {
     Close,
 }
 
-fn window_control_button(ui: &mut egui::Ui, kind: WindowControlKind) -> egui::Response {
+fn window_control_button(
+    ui: &mut egui::Ui,
+    kind: WindowControlKind,
+    title_bar_color: egui::Color32,
+) -> egui::Response {
     let is_close = kind == WindowControlKind::Close;
     let (rect, response) = ui.allocate_exact_size(
         egui::vec2(WINDOW_BUTTON_WIDTH, TITLE_CONTENT_HEIGHT),
@@ -1186,7 +1191,7 @@ fn window_control_button(ui: &mut egui::Ui, kind: WindowControlKind) -> egui::Re
             let front =
                 egui::Rect::from_min_size(center + egui::vec2(-4.5, -2.5), egui::vec2(7.0, 7.0));
             let bg_fill = if fill == egui::Color32::TRANSPARENT {
-                ui.style().visuals.panel_fill
+                title_bar_color
             } else {
                 fill
             };
@@ -1384,9 +1389,15 @@ impl eframe::App for GoatpadApp {
             )
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(TITLE_BAR_SPACING, 0.0);
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::BOTTOM), |ui| {
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        show_app_icon(ui, &self.app_icon_texture);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(TITLE_CONTROL_WIDTH, TITLE_BAR_HEIGHT),
+                            egui::Layout::bottom_up(egui::Align::Center),
+                            |ui| {
+                                show_app_icon(ui, &self.app_icon_texture);
+                            },
+                        );
                     });
 
                     if !tabs.is_empty() {
@@ -1396,15 +1407,23 @@ impl eframe::App for GoatpadApp {
                             + 7.0 * TITLE_BAR_SPACING;
                         let tabs_width = (ui.available_width() - fixed_width).max(240.0);
 
-                        egui::ScrollArea::horizontal()
-                            .id_salt("title_bar_tabs")
-                            .max_width(tabs_width)
-                            .scroll_bar_visibility(
-                                egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden,
-                            )
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    for (id, title) in &tabs {
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(tabs_width, TITLE_TAB_HEIGHT),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                let rect = ui.max_rect();
+                                ui.set_clip_rect(rect);
+
+                                egui::ScrollArea::horizontal()
+                                    .id_salt("title_bar_tabs")
+                                    .max_width(tabs_width)
+                                    .max_height(TITLE_TAB_HEIGHT)
+                                    .scroll_bar_visibility(
+                                        egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                                    )
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            for (id, title) in &tabs {
                                         if self.renaming_document == Some(*id) {
                                             let response = ui.add(
                                                 egui::TextEdit::singleline(&mut self.rename_buffer)
@@ -1451,15 +1470,15 @@ impl eframe::App for GoatpadApp {
                                                 .inner_margin(egui::Margin {
                                                     right: 12,
                                                     left: 12,
-                                                    top: 5,
-                                                    bottom: 3,
+                                                    top: 8,
+                                                    bottom: 4,
                                                 })
                                                 .show(ui, |ui| {
                                                     let tab_label_size =
-                                                        self.theme_draft.font_size * 0.9;
+                                                        self.theme_draft.font_size * 0.85;
                                                     ui.with_layout(
                                                         egui::Layout::left_to_right(
-                                                            egui::Align::Center,
+                                                            egui::Align::TOP,
                                                         ),
                                                         |ui| {
                                                             let mut label =
@@ -1480,7 +1499,7 @@ impl eframe::App for GoatpadApp {
                                                                     .frame_when_inactive(false)
                                                                     .corner_radius(5)
                                                                     .min_size(egui::vec2(
-                                                                        24.0, 24.0,
+                                                                        18.0, 18.0,
                                                                     )),
                                                                 )
                                                                 .on_hover_text("Close tab");
@@ -1497,7 +1516,8 @@ impl eframe::App for GoatpadApp {
                                                     .inner
                                                 })
                                                 .inner
-                                                .on_hover_text("Double-click to rename");
+                                                .on_hover_text("Double-click to rename")
+                                                .on_hover_cursor(egui::CursorIcon::PointingHand);
 
                                             if response.clicked() {
                                                 requested_switch = Some(*id);
@@ -1506,22 +1526,29 @@ impl eframe::App for GoatpadApp {
                                                 requested_rename = Some(*id);
                                             }
                                         }
-                                    }
-                                });
-                            });
+                                            }
+                                        });
+                                    });
+                            },
+                        );
                     }
 
-                    if ui
-                        .add_sized(
-                            [TITLE_CONTENT_HEIGHT, TITLE_CONTENT_HEIGHT],
-                            egui::Button::new(egui_phosphor::regular::PLUS)
-                                .frame_when_inactive(false)
-                                .corner_radius(5)
-                                .min_size(egui::vec2(24.0, 24.0)),
+                    let new_tab_response = ui
+                        .allocate_ui_with_layout(
+                            egui::vec2(TITLE_CONTENT_HEIGHT, TITLE_TAB_HEIGHT),
+                            egui::Layout::centered_and_justified(egui::Direction::BottomUp),
+                            |ui| {
+                                ui.add_sized(
+                                    [18.0, 18.0],
+                                    egui::Button::new(egui_phosphor::regular::PLUS)
+                                        .frame_when_inactive(false)
+                                        .corner_radius(5),
+                                )
+                            },
                         )
-                        .on_hover_text("New tab")
-                        .clicked()
-                    {
+                        .inner
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if new_tab_response.on_hover_text("New tab").clicked() {
                         requested_new_tab = true;
                     }
                     let drag_width = (ui.available_width()
@@ -1542,7 +1569,13 @@ impl eframe::App for GoatpadApp {
                         .allocate_ui_with_layout(
                             egui::vec2(WINDOW_BUTTON_WIDTH, TITLE_BAR_HEIGHT),
                             egui::Layout::top_down(egui::Align::Center),
-                            |ui| window_control_button(ui, WindowControlKind::Minimize),
+                            |ui| {
+                                window_control_button(
+                                    ui,
+                                    WindowControlKind::Minimize,
+                                    self.title_bar_color,
+                                )
+                            },
                         )
                         .inner;
                     if minimize_response.on_hover_text("Minimize").clicked() {
@@ -1558,7 +1591,7 @@ impl eframe::App for GoatpadApp {
                         .allocate_ui_with_layout(
                             egui::vec2(WINDOW_BUTTON_WIDTH, TITLE_BAR_HEIGHT),
                             egui::Layout::top_down(egui::Align::Center),
-                            |ui| window_control_button(ui, max_kind),
+                            |ui| window_control_button(ui, max_kind, self.title_bar_color),
                         )
                         .inner;
                     if maximize_response
@@ -1571,7 +1604,13 @@ impl eframe::App for GoatpadApp {
                         .allocate_ui_with_layout(
                             egui::vec2(WINDOW_BUTTON_WIDTH, TITLE_BAR_HEIGHT),
                             egui::Layout::top_down(egui::Align::Center),
-                            |ui| window_control_button(ui, WindowControlKind::Close),
+                            |ui| {
+                                window_control_button(
+                                    ui,
+                                    WindowControlKind::Close,
+                                    self.title_bar_color,
+                                )
+                            },
                         )
                         .inner;
                     if close_response.on_hover_text("Close").clicked() {

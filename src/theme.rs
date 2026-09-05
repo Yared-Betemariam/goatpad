@@ -134,7 +134,7 @@ impl Theme {
 
     pub fn border_color(&self) -> Color32 {
         if self.is_dark() {
-            Color32::from_rgba_premultiplied(48, 48, 48, 65)
+            Color32::from_rgba_premultiplied(24, 24, 24, 100)
         } else {
             Color32::from_rgba_premultiplied(24, 24, 24, 65)
         }
