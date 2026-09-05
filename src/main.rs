@@ -7,6 +7,7 @@ use std::{
 };
 use uuid::Uuid;
 
+mod config;
 mod document;
 mod formatting;
 mod highlighting;
@@ -202,7 +203,7 @@ impl GoatpadApp {
             update_status: UpdateStatus::Idle,
             update_receiver: None,
         };
-        if app.settings.auto_check_updates && !app.settings.update_manifest_url.trim().is_empty() {
+        if app.settings.auto_check_updates && !config::UPDATE_MANIFEST_URL.is_empty() {
             app.check_for_updates();
         }
         Ok(app)
@@ -249,15 +250,14 @@ impl GoatpadApp {
     }
 
     fn check_for_updates(&mut self) {
-        let url = self.settings.update_manifest_url.trim().to_owned();
-        if url.is_empty() {
+        if config::UPDATE_MANIFEST_URL.trim().is_empty() {
             self.update_status = UpdateStatus::Error(
-                "Set an HTTPS update manifest URL before checking for updates".to_owned(),
+                "Update checking is not configured in src/config.rs".to_owned(),
             );
             return;
         }
         self.update_status = UpdateStatus::Checking;
-        self.update_receiver = Some(updates::check_in_background(url));
+        self.update_receiver = Some(updates::check_in_background());
     }
 
     fn download_and_install_update(&mut self, release: ReleaseManifest) {
@@ -305,17 +305,13 @@ impl GoatpadApp {
         ui.heading("Application updates");
         ui.label(format!("Installed version: {}", updates::CURRENT_VERSION));
         ui.add_space(6.0);
-        ui.label("Update manifest URL");
-        let url_response = ui.add(
-            egui::TextEdit::singleline(&mut self.settings.update_manifest_url)
-                .hint_text("https://example.com/goatpad/update.json")
-                .desired_width(420.0),
-        );
-        if url_response.changed() {
-            if let Err(error) = self.settings.save(&self.paths) {
-                self.report_error(format!("Could not save update settings: {error}"));
-            }
+        if config::UPDATE_MANIFEST_URL.trim().is_empty() {
+            ui.label("Update checking is not configured.");
+            ui.label("Set UPDATE_MANIFEST_URL in src/config.rs to enable releases.");
+        } else {
+            ui.label("Updates use the manifest configured in src/config.rs.");
         }
+        ui.add_space(6.0);
         if ui
             .checkbox(
                 &mut self.settings.auto_check_updates,

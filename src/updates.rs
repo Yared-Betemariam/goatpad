@@ -28,10 +28,12 @@ pub enum UpdateEvent {
     Download(Result<PathBuf, String>),
 }
 
-pub fn check_in_background(manifest_url: String) -> Receiver<UpdateEvent> {
+pub fn check_in_background() -> Receiver<UpdateEvent> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
-        let _ = sender.send(UpdateEvent::Check(check_for_update(&manifest_url)));
+        let _ = sender.send(UpdateEvent::Check(check_for_update(
+            crate::config::UPDATE_MANIFEST_URL,
+        )));
     });
     receiver
 }

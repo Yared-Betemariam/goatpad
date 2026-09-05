@@ -15,8 +15,6 @@ pub struct Settings {
         deserialize_with = "deserialize_keybindings"
     )]
     pub keybindings: HashMap<Action, Keybinding>,
-    #[serde(default)]
-    pub update_manifest_url: String,
     #[serde(default = "default_auto_check_updates")]
     pub auto_check_updates: bool,
 }
@@ -53,7 +51,6 @@ impl Default for Settings {
         Self {
             theme: default_theme_name(),
             keybindings: default_bindings(),
-            update_manifest_url: String::new(),
             auto_check_updates: default_auto_check_updates(),
         }
     }

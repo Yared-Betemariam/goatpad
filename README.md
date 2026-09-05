@@ -21,7 +21,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 - Tabbed Settings window with full theme CRUD (create, duplicate, edit, delete), theme-aware editor text, and separate System and Content font selections
 - Configurable keyboard shortcuts
 - Local storage with no account or cloud service required
-- Optional in-app MSI updates: a configurable HTTPS release manifest can check, download, verify, and launch upgrades from Settings → Updates
+- Optional in-app MSI updates: an HTTPS release manifest configured in `src/config.rs` can be checked, downloaded, verified, and installed from Settings → Updates
 
 ## Requirements
 
@@ -96,7 +96,7 @@ Close Goatpad before upgrading. Uninstalling or upgrading the application does n
 
 ## In-app updates
 
-Goatpad includes an opt-in update flow for MSI releases. In **Settings → Updates**, set the HTTPS URL of a JSON release manifest. Goatpad checks it at startup (unless disabled), lets the user manually check from the File menu, verifies the optional SHA-256 checksum, then closes and starts the elevated MSI upgrade.
+Goatpad includes an opt-in update flow for MSI releases. Set `UPDATE_MANIFEST_URL` in `src/config.rs` to the HTTPS URL of a JSON release manifest. Goatpad checks it at startup (unless disabled), lets the user manually check from the File menu, verifies the optional SHA-256 checksum, then closes and starts the elevated MSI upgrade.
 
 Host each release MSI and a manifest like this on HTTPS:
 
