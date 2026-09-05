@@ -6,7 +6,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 
 - A Notepad-style look throughout: a custom title bar with tabs, a consolidated action bar, and a status bar
 - Title-bar tabs and controls use a bottom-aligned content row with compact, top-aligned 24px window buttons; the active tab uses the theme primary as text with no background
-- A slightly darker title bar subtly tinted toward each theme's secondary color
+- A title bar subtly tinted toward each theme's secondary color, with dark themes shaded toward white and light themes toward black
 - Generous ergonomic padding throughout the title bar, action bar header, status bar footer, and document editor view
 - Modernized Phosphor vector iconography and native Windows-style vector window controls
 - Markdown and plain-text editing in persistent tabs, with new notes defaulting to plain text (`TXT`) and switchable per note (`MD`/`TXT`)

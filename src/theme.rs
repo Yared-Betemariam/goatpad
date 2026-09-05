@@ -116,7 +116,13 @@ impl<'de> Deserialize<'de> for Theme {
 // Color shaded title bar
 impl Theme {
     pub fn title_bar_color(&self) -> Color32 {
-        let background = self.background.0.gamma_multiply(0.92);
+        let background = self.background.0;
+        let shade_target = if background.r() < 128 { 255 } else { 0 };
+        let background = Color32::from_rgb(
+            blend_channel(background.r(), shade_target, 0.08),
+            blend_channel(background.g(), shade_target, 0.08),
+            blend_channel(background.b(), shade_target, 0.08),
+        );
         let secondary = self.secondary.0;
         Color32::from_rgb(
             blend_channel(background.r(), secondary.r(), 0.02),
@@ -178,8 +184,8 @@ impl Theme {
     }
 }
 
-fn blend_channel(background: u8, secondary: u8, amount: f32) -> u8 {
-    (f32::from(background) + (f32::from(secondary) - f32::from(background)) * amount).round() as u8
+fn blend_channel(background: u8, target: u8, amount: f32) -> u8 {
+    (f32::from(background) + (f32::from(target) - f32::from(background)) * amount).round() as u8
 }
 
 /// Installs Windows' included writing fonts while retaining egui's embedded
