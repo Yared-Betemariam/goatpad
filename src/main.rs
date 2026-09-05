@@ -21,6 +21,7 @@ mod updates;
 mod workspace;
 
 use document::DocKind;
+use egui_extras::{Column, TableBuilder};
 use hotkeys::{Action, Keybinding};
 use paths::AppPaths;
 use persistence::{SaveRequest, SaveResult, start_writer_thread};
@@ -556,21 +557,6 @@ impl GoatpadApp {
             });
         });
 
-        if let Some(to_delete) = self.theme_delete_confirm.clone() {
-            ui.group(|ui| {
-                ui.label(format!("Delete custom theme \"{to_delete}\"?"));
-                ui.horizontal(|ui| {
-                    if ui.button("Confirm Delete").clicked() {
-                        self.theme_delete_confirm = None;
-                        self.delete_custom_theme(ctx, &to_delete);
-                    }
-                    if ui.button("Cancel").clicked() {
-                        self.theme_delete_confirm = None;
-                    }
-                });
-            });
-        }
-
         egui::ScrollArea::vertical()
             .max_height(350.0)
             .show(ui, |ui| {
@@ -633,23 +619,34 @@ impl GoatpadApp {
     fn render_keyboard_settings(&mut self, ui: &mut egui::Ui) {
         ui.heading("Keyboard shortcuts");
         ui.label("Click a shortcut, then press its replacement key combination.");
-        egui::Grid::new("keybinding_grid")
+        ui.add_space(8.0);
+        TableBuilder::new(ui)
             .striped(true)
-            .show(ui, |ui| {
+            .column(Column::remainder())
+            .column(Column::remainder())
+            .body(|mut body| {
                 for action in Action::ALL {
-                    ui.label(action.label());
-                    let text = if self.rebinding == Some(action) {
-                        "Press new combo…".to_owned()
-                    } else {
-                        self.settings
-                            .keybindings
-                            .get(&action)
-                            .map_or_else(|| "Unbound".to_owned(), Keybinding::to_string)
-                    };
-                    if ui.button(text).clicked() {
-                        self.rebinding = Some(action);
-                    }
-                    ui.end_row();
+                    body.row(24.0, |mut row| {
+                        row.col(|ui| {
+                            ui.label(action.label());
+                        });
+                        row.col(|ui| {
+                            let text = if self.rebinding == Some(action) {
+                                "Press new combo…".to_owned()
+                            } else {
+                                self.settings
+                                    .keybindings
+                                    .get(&action)
+                                    .map_or_else(|| "Unbound".to_owned(), Keybinding::to_string)
+                            };
+                            if ui
+                                .add_sized(ui.available_size(), egui::Button::new(text))
+                                .clicked()
+                            {
+                                self.rebinding = Some(action);
+                            }
+                        });
+                    });
                 }
             });
     }
@@ -2091,13 +2088,70 @@ impl eframe::App for GoatpadApp {
 
                     // Region 3: MD/TXT Switcher (right-aligned)
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.spacing_mut().item_spacing.x -= 6.0;
-                        ui.spacing_mut().button_padding = egui::vec2(6.0, 4.0);
+                        ui.spacing_mut().item_spacing.x -= 7.0;
+                        ui.spacing_mut().button_padding = egui::vec2(8.0, 2.0);
+
                         if let Some(document_id) = self.session.active_tab {
                             if let Some(document) = self.workspace.document(document_id) {
                                 let mut requested_kind = document.kind;
-                                ui.selectable_value(&mut requested_kind, DocKind::Txt, "TXT");
-                                ui.selectable_value(&mut requested_kind, DocKind::Md, "MD");
+                                let primary = self.theme_draft.primary.0;
+                                let background = self.theme_draft.background.0;
+                                let normal_text = ui.visuals().text_color();
+                                let inactive_text = normal_text.gamma_multiply(0.6);
+                                let switcher_stroke =
+                                    egui::Stroke::new(1.0, self.theme_draft.border_color());
+
+                                ui.add(
+                                    egui::Button::new(egui::RichText::new("TXT").color(
+                                        if requested_kind == DocKind::Txt {
+                                            primary
+                                        } else {
+                                            inactive_text
+                                        },
+                                    ))
+                                    .fill(if requested_kind == DocKind::Txt {
+                                        primary.gamma_multiply(0.15)
+                                    } else {
+                                        background
+                                    })
+                                    .stroke(switcher_stroke)
+                                    .corner_radius(
+                                        egui::CornerRadius {
+                                            nw: 0,
+                                            ne: 5,
+                                            sw: 0,
+                                            se: 5,
+                                        },
+                                    ),
+                                )
+                                .clicked()
+                                .then(|| requested_kind = DocKind::Txt);
+                                ui.add(
+                                    egui::Button::new(egui::RichText::new("MD").color(
+                                        if requested_kind == DocKind::Md {
+                                            primary
+                                        } else {
+                                            inactive_text
+                                        },
+                                    ))
+                                    .fill(if requested_kind == DocKind::Md {
+                                        primary.gamma_multiply(0.15)
+                                    } else {
+                                        background
+                                    })
+                                    .stroke(switcher_stroke)
+                                    .corner_radius(
+                                        egui::CornerRadius {
+                                            nw: 5,
+                                            ne: 0,
+                                            sw: 5,
+                                            se: 0,
+                                        },
+                                    ),
+                                )
+                                .clicked()
+                                .then(|| requested_kind = DocKind::Md);
+
                                 if requested_kind != document.kind {
                                     self.flush_active_now();
                                     if let Err(error) = self
@@ -2135,6 +2189,7 @@ impl eframe::App for GoatpadApp {
             let mut list_open = self.tabs_list_open;
             egui::Window::new("Tabs list")
                 .open(&mut list_open)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .collapsible(false)
                 .resizable(true)
                 .default_width(360.0)
@@ -2397,6 +2452,7 @@ impl eframe::App for GoatpadApp {
             let cancel_with_keyboard =
                 ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
             egui::Window::new("Delete note?")
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .collapsible(false)
                 .resizable(false)
                 .show(&ctx, |ui| {
@@ -2419,6 +2475,7 @@ impl eframe::App for GoatpadApp {
             let mut settings_open = self.settings_open;
             egui::Window::new("Settings")
                 .open(&mut settings_open)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .resizable(true)
                 .default_width(480.0)
                 .show(&ctx, |ui| {
@@ -2447,6 +2504,27 @@ impl eframe::App for GoatpadApp {
                     }
                 });
             self.settings_open = settings_open;
+        }
+
+        if let Some(to_delete) = self.theme_delete_confirm.clone() {
+            let cancel_with_keyboard =
+                ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+            egui::Window::new("Delete theme?")
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .collapsible(false)
+                .resizable(false)
+                .show(&ctx, |ui| {
+                    ui.label(format!("Delete custom theme \"{to_delete}\"?"));
+                    ui.horizontal(|ui| {
+                        if ui.button("Confirm Delete").clicked() {
+                            self.theme_delete_confirm = None;
+                            self.delete_custom_theme(&ctx, &to_delete);
+                        }
+                        if cancel_with_keyboard || ui.button("Cancel").clicked() {
+                            self.theme_delete_confirm = None;
+                        }
+                    });
+                });
         }
 
         let now = Instant::now();

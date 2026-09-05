@@ -16,6 +16,7 @@ uuid = { version = "1.25.0", features = ["v4", "serde"] }
 semver = "1.0.27"
 sha2 = "0.10.9"
 ureq = "3.1.4"
+egui_extras = "0.36.1"
 
 [build-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
