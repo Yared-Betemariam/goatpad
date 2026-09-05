@@ -17,8 +17,6 @@ pub const FONT_OPTIONS: &[&str] = &[
     "Monospace",
 ];
 
-pub const BORDER_COLOR: Color32 = Color32::from_rgba_premultiplied(48, 48, 48, 65);
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ThemeColor(pub Color32);
 
@@ -115,20 +113,31 @@ impl<'de> Deserialize<'de> for Theme {
 
 // Color shaded title bar
 impl Theme {
+    pub fn is_dark(&self) -> bool {
+        self.background.0.r() < 128
+    }
+
     pub fn title_bar_color(&self) -> Color32 {
-        let background = self.background.0;
-        let shade_target = if background.r() < 128 { 255 } else { 0 };
-        let background = Color32::from_rgb(
-            blend_channel(background.r(), shade_target, 0.08),
-            blend_channel(background.g(), shade_target, 0.08),
-            blend_channel(background.b(), shade_target, 0.08),
-        );
+        let background =
+            shade_toward_contrast(self.background.0, if self.is_dark() { 0.04 } else { 0.06 });
         let secondary = self.secondary.0;
         Color32::from_rgb(
-            blend_channel(background.r(), secondary.r(), 0.02),
-            blend_channel(background.g(), secondary.g(), 0.02),
-            blend_channel(background.b(), secondary.b(), 0.02),
+            blend_channel(background.r(), secondary.r(), 0.04),
+            blend_channel(background.g(), secondary.g(), 0.04),
+            blend_channel(background.b(), secondary.b(), 0.04),
         )
+    }
+
+    pub fn footer_color(&self) -> Color32 {
+        shade_toward_contrast(self.background.0, if self.is_dark() { 0.04 } else { 0.02 })
+    }
+
+    pub fn border_color(&self) -> Color32 {
+        if self.is_dark() {
+            Color32::from_rgba_premultiplied(48, 48, 48, 65)
+        } else {
+            Color32::from_rgba_premultiplied(24, 24, 24, 65)
+        }
     }
 
     pub fn default_dark() -> Self {
@@ -186,6 +195,15 @@ impl Theme {
 
 fn blend_channel(background: u8, target: u8, amount: f32) -> u8 {
     (f32::from(background) + (f32::from(target) - f32::from(background)) * amount).round() as u8
+}
+
+fn shade_toward_contrast(background: Color32, amount: f32) -> Color32 {
+    let target = if background.r() < 128 { 255 } else { 0 };
+    Color32::from_rgb(
+        blend_channel(background.r(), target, amount),
+        blend_channel(background.g(), target, amount),
+        blend_channel(background.b(), target, amount),
+    )
 }
 
 /// Installs Windows' included writing fonts while retaining egui's embedded
@@ -249,7 +267,7 @@ fn install_windows_font(fonts: &mut FontDefinitions, family_name: &str, file_nam
 }
 
 pub fn apply_theme(ctx: &egui::Context, theme: &Theme) {
-    let egui_theme = if theme.background.0.r() < 128 {
+    let egui_theme = if theme.is_dark() {
         egui::Theme::Dark
     } else {
         egui::Theme::Light
@@ -269,18 +287,17 @@ pub fn apply_theme(ctx: &egui::Context, theme: &Theme) {
     visuals.faint_bg_color = secondary.gamma_multiply(0.13);
     visuals.code_bg_color = secondary.gamma_multiply(0.20);
     // visuals.selection.bg_fill = primary.gamma_multiply(0.50);
-    visuals.window_stroke.color = BORDER_COLOR;
+    visuals.window_stroke.color = theme.border_color();
     visuals.hyperlink_color = primary;
     visuals.widgets.inactive.bg_fill = secondary.gamma_multiply(0.20);
     visuals.widgets.hovered.bg_fill = secondary.gamma_multiply(0.42);
     visuals.widgets.active.bg_fill = primary.gamma_multiply(0.60);
     visuals.widgets.open.bg_fill = secondary.gamma_multiply(0.30);
-    visuals.widgets.noninteractive.bg_stroke.color = BORDER_COLOR;
-    visuals.widgets.inactive.bg_stroke.color = BORDER_COLOR;
-    visuals.widgets.hovered.bg_stroke.color = BORDER_COLOR;
-    visuals.widgets.active.bg_stroke.color = BORDER_COLOR;
-    visuals.widgets.open.bg_stroke.color = BORDER_COLOR;
-    // visuals.selection.stroke.color = BORDER_COLOR;
+    visuals.widgets.noninteractive.bg_stroke.color = theme.border_color();
+    visuals.widgets.inactive.bg_stroke.color = theme.border_color();
+    visuals.widgets.hovered.bg_stroke.color = theme.border_color();
+    visuals.widgets.active.bg_stroke.color = theme.border_color();
+    visuals.widgets.open.bg_stroke.color = theme.border_color();
     ctx.set_visuals(visuals);
     ctx.style_mut_of(egui_theme, |style| {
         for font_id in style.text_styles.values_mut() {

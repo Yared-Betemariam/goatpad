@@ -27,8 +27,7 @@ use persistence::{SaveRequest, SaveResult, start_writer_thread};
 use session::{Session, TabState, WindowGeom};
 use settings::Settings;
 use theme::{
-    BORDER_COLOR, FONT_OPTIONS, Theme, apply_theme, ensure_default_themes, install_fonts,
-    load_themes, save_theme,
+    FONT_OPTIONS, Theme, apply_theme, ensure_default_themes, install_fonts, load_themes, save_theme,
 };
 use updates::{ReleaseManifest, UpdateEvent};
 use workspace::Workspace;
@@ -1458,22 +1457,22 @@ impl eframe::App for GoatpadApp {
                                                 .show(ui, |ui| {
                                                     let tab_label_size =
                                                         self.theme_draft.font_size * 0.9;
-                                                    if is_active {
-                                                        ui.with_layout(
-                                                            egui::Layout::left_to_right(
-                                                                egui::Align::Center,
-                                                            ),
-                                                            |ui| {
-                                                                let label_response = ui.label(
-                                                                    egui::RichText::new(title)
-                                                                        .size(tab_label_size)
-                                                                        .color(
-                                                                            self.theme_draft
-                                                                                .primary
-                                                                                .0,
-                                                                        ),
+                                                    ui.with_layout(
+                                                        egui::Layout::left_to_right(
+                                                            egui::Align::Center,
+                                                        ),
+                                                        |ui| {
+                                                            let mut label =
+                                                                egui::RichText::new(title)
+                                                                    .size(tab_label_size)
+                                                                    .strong();
+                                                            if is_active {
+                                                                label = label.color(
+                                                                    self.theme_draft.primary.0,
                                                                 );
-                                                                let close_response = ui
+                                                            }
+                                                            let label_response = ui.label(label);
+                                                            let close_response = ui
                                                                 .add(
                                                                     egui::Button::new(
                                                                         egui_phosphor::regular::X,
@@ -1486,31 +1485,16 @@ impl eframe::App for GoatpadApp {
                                                                 )
                                                                 .on_hover_text("Close tab");
 
-                                                                if close_response.middle_clicked()
-                                                                    || close_response.clicked()
-                                                                {
-                                                                    requested_close = Some(*id);
-                                                                }
+                                                            if close_response.middle_clicked()
+                                                                || close_response.clicked()
+                                                            {
+                                                                requested_close = Some(*id);
+                                                            }
 
-                                                                label_response
-                                                            },
-                                                        )
-                                                        .inner
-                                                    } else {
-                                                        ui.with_layout(
-                                                            egui::Layout::left_to_right(
-                                                                egui::Align::Center,
-                                                            ),
-                                                            |ui| {
-                                                                ui.selectable_label(
-                                                                    false,
-                                                                    egui::RichText::new(title)
-                                                                        .size(tab_label_size),
-                                                                )
-                                                            },
-                                                        )
-                                                        .inner
-                                                    }
+                                                            label_response
+                                                        },
+                                                    )
+                                                    .inner
                                                 })
                                                 .inner
                                                 .on_hover_text("Double-click to rename");
@@ -2192,7 +2176,7 @@ impl eframe::App for GoatpadApp {
             .show_separator_line(false)
             .frame(
                 egui::Frame::new()
-                    .fill(ui.style().visuals.panel_fill.gamma_multiply(0.99))
+                    .fill(self.theme_draft.footer_color())
                     .inner_margin(egui::Margin {
                         left: 16,
                         right: 16,
@@ -2279,7 +2263,7 @@ impl eframe::App for GoatpadApp {
         ui.painter().hline(
             footer_response.response.rect.left()..=footer_response.response.rect.right(),
             footer_response.response.rect.top(),
-            egui::Stroke::new(1.75, BORDER_COLOR),
+            egui::Stroke::new(1.75, self.theme_draft.border_color()),
         );
 
         egui::CentralPanel::default()
