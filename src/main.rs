@@ -105,6 +105,7 @@ struct GoatpadApp {
     delete_confirmation: Option<Uuid>,
     tabs_list_open: bool,
     tabs_list_search: String,
+    focus_tabs_list_search: bool,
     settings: Settings,
     settings_open: bool,
     settings_tab: SettingsTab,
@@ -180,6 +181,7 @@ impl GoatpadApp {
             delete_confirmation: None,
             tabs_list_open: false,
             tabs_list_search: String::new(),
+            focus_tabs_list_search: false,
             settings,
             settings_open: false,
             settings_tab: SettingsTab::default(),
@@ -226,6 +228,36 @@ impl GoatpadApp {
             shown_at: Instant::now(),
             kind: ToastKind::Success,
         });
+    }
+
+    fn set_tabs_list_open(&mut self, open: bool) {
+        self.tabs_list_open = open;
+        self.focus_tabs_list_search = open;
+    }
+
+    fn toggle_tabs_list(&mut self) {
+        self.set_tabs_list_open(!self.tabs_list_open);
+    }
+
+    fn toggle_active_document_kind(&mut self) {
+        let Some((document_id, current_kind)) = self.session.active_tab.and_then(|id| {
+            self.workspace
+                .document(id)
+                .map(|document| (id, document.kind))
+        }) else {
+            return;
+        };
+        let requested_kind = match current_kind {
+            DocKind::Md => DocKind::Txt,
+            DocKind::Txt => DocKind::Md,
+        };
+        self.flush_active_now();
+        if let Err(error) = self
+            .workspace
+            .set_document_kind(document_id, requested_kind)
+        {
+            self.report_error(format!("Could not change document type: {error}"));
+        }
     }
 
     fn save_zoom_settings(&mut self) {
@@ -1032,6 +1064,8 @@ impl GoatpadApp {
                     self.activate_tab(id);
                 }
             }
+            Action::OpenTabsList => self.toggle_tabs_list(),
+            Action::ToggleDocumentKind => self.toggle_active_document_kind(),
             Action::OpenSettings => self.settings_open = !self.settings_open,
             action
                 if action.is_formatting()
@@ -1694,7 +1728,7 @@ impl eframe::App for GoatpadApp {
                         .on_hover_text("Tabs list")
                         .clicked()
                     {
-                        self.tabs_list_open = !self.tabs_list_open;
+                        self.toggle_tabs_list();
                     }
                     ui.menu_button("File", |ui| {
                         if ui.button("New tab").clicked() {
@@ -1715,7 +1749,7 @@ impl eframe::App for GoatpadApp {
                         }
                         ui.separator();
                         if ui.button("Tabs list").clicked() {
-                            self.tabs_list_open = true;
+                            self.set_tabs_list_open(true);
                             ui.close();
                         }
                         ui.separator();
@@ -2219,7 +2253,7 @@ impl eframe::App for GoatpadApp {
                 .resizable(true)
                 .default_width(360.0)
                 .show(&ctx, |ui| {
-                    ui.add(
+                    let search_response = ui.add(
                         egui::TextEdit::singleline(&mut self.tabs_list_search)
                             .hint_text(format!(
                                 "{} Search notes…",
@@ -2227,6 +2261,10 @@ impl eframe::App for GoatpadApp {
                             ))
                             .desired_width(f32::INFINITY),
                     );
+                    if self.focus_tabs_list_search {
+                        search_response.request_focus();
+                        self.focus_tabs_list_search = false;
+                    }
                     ui.separator();
                     let query = self.tabs_list_search.trim().to_lowercase();
                     egui::ScrollArea::vertical()
@@ -2271,6 +2309,9 @@ impl eframe::App for GoatpadApp {
                         });
                 });
             self.tabs_list_open = list_open;
+            if !self.tabs_list_open {
+                self.focus_tabs_list_search = false;
+            }
         }
         if let Some(id) = requested_list_open {
             self.tabs_list_open = false;

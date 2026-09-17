@@ -11,7 +11,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 - Modernized Phosphor vector iconography and native Windows-style vector window controls
 - Markdown and plain-text editing in persistent tabs, with new notes defaulting to plain text (`TXT`) and switchable per note (`MD`/`TXT`)
 - A unified action bar combining File/Edit/View menus, contextual Markdown formatting tools (headings, lists, bold, italic, strikethrough, link, table, clear formatting), and the note type switcher
-- A searchable Tabs List for reopening closed notes and explicitly deleting unwanted notes
+- A searchable Tabs List for reopening closed notes and explicitly deleting unwanted notes; opening it focuses the search field automatically
 - Automatic note titles derived from the first line (up to 20 characters), with custom titles via double-click on a tab (renamed in place)
 - Import and export of all notes through portable JSON backups
 - Live Markdown highlighting and common formatting actions, available from the action bar, the Edit menu, or keyboard shortcuts
@@ -116,7 +116,7 @@ The `version` must be newer than the installed version. The MSI URL and manifest
 | Action                    | Shortcut                        |
 | ------------------------- | ------------------------------- |
 | New tab                   | `Ctrl+T`                        |
-| Close tab                 | `Ctrl+Shift+W`                  |
+| Close tab                 | `Ctrl+W`                        |
 | Next tab                  | `Ctrl+Tab`                      |
 | Previous tab              | `Ctrl+Shift+Tab`                |
 | Settings                  | `Ctrl+,`                        |
@@ -124,6 +124,8 @@ The `version` must be newer than the installed version. The MSI URL and manifest
 | Strikethrough             | `Ctrl+Shift+X`                  |
 | Bulleted / Numbered list  | `Ctrl+Shift+8` / `Ctrl+Shift+7` |
 | Insert link               | `Ctrl+K`                        |
+| Tabs list                 | `Ctrl+P`                        |
+| MD/TXT switcher           | `Ctrl+M`                        |
 
 Formatting shortcuts only apply to Markdown notes. Shortcuts can be changed from the Keyboard tab in application settings.
 
@@ -133,7 +135,7 @@ Goatpad unifies the application menus and formatting tools into a single, height
 
 - **Actions**: Tabs List, followed by the File, Edit, and View menus on the left.
 - **Markdown options**: A heading dropdown (H1–H3), list dropdown (bulleted/numbered), bold, italic, strikethrough, link, table, and clear-formatting controls in the center. These tools are rendered only when the active note is Markdown (`MD`); for plain-text notes (`TXT`), the region collapses without changing the bar's height. On constrained window widths, tools collapse cleanly into a "Format" overflow menu.
-- **Document switcher**: An immediate `MD`/`TXT` switch at the right edge of the bar (also switchable via the `View` menu).
+- **Document switcher**: An immediate `MD`/`TXT` switch at the right edge of the bar (also switchable via the `View` menu or `Ctrl+M`).
 
 ## Settings & Themes
 

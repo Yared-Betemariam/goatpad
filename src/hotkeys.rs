@@ -11,6 +11,8 @@ pub enum Action {
     ToggleBulletList,
     ToggleNumberedList,
     InsertLink,
+    OpenTabsList,
+    ToggleDocumentKind,
     NewTab,
     #[serde(alias = "DeleteTab")]
     CloseTab,
@@ -20,7 +22,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 14] = [
         Self::ToggleBold,
         Self::ToggleItalic,
         Self::ToggleUnderline,
@@ -28,6 +30,8 @@ impl Action {
         Self::ToggleBulletList,
         Self::ToggleNumberedList,
         Self::InsertLink,
+        Self::OpenTabsList,
+        Self::ToggleDocumentKind,
         Self::NewTab,
         Self::CloseTab,
         Self::NextTab,
@@ -44,6 +48,8 @@ impl Action {
             Self::ToggleBulletList => "Bullet list",
             Self::ToggleNumberedList => "Numbered list",
             Self::InsertLink => "Insert link",
+            Self::OpenTabsList => "Tabs list",
+            Self::ToggleDocumentKind => "Toggle MD/TXT",
             Self::NewTab => "New tab",
             Self::CloseTab => "Close tab",
             Self::NextTab => "Next tab",
@@ -177,18 +183,16 @@ pub fn default_bindings() -> HashMap<Action, Keybinding> {
             ),
         ),
         (Action::InsertLink, Keybinding::new(Key::K, Modifiers::CTRL)),
-        (Action::NewTab, Keybinding::new(Key::T, Modifiers::CTRL)),
         (
-            Action::CloseTab,
-            Keybinding::new(
-                Key::W,
-                Modifiers {
-                    ctrl: true,
-                    shift: true,
-                    ..Modifiers::NONE
-                },
-            ),
+            Action::OpenTabsList,
+            Keybinding::new(Key::P, Modifiers::CTRL),
         ),
+        (
+            Action::ToggleDocumentKind,
+            Keybinding::new(Key::M, Modifiers::CTRL),
+        ),
+        (Action::NewTab, Keybinding::new(Key::T, Modifiers::CTRL)),
+        (Action::CloseTab, Keybinding::new(Key::W, Modifiers::CTRL)),
         (Action::NextTab, Keybinding::new(Key::Tab, Modifiers::CTRL)),
         (
             Action::PreviousTab,
@@ -295,6 +299,9 @@ mod tests {
         let bindings = default_bindings();
         assert_eq!(bindings[&Action::NextTab].to_string(), "Ctrl+Tab");
         assert_eq!(bindings[&Action::PreviousTab].to_string(), "Ctrl+Shift+Tab");
+        assert_eq!(bindings[&Action::OpenTabsList].to_string(), "Ctrl+P");
+        assert_eq!(bindings[&Action::ToggleDocumentKind].to_string(), "Ctrl+M");
+        assert_eq!(bindings[&Action::CloseTab].to_string(), "Ctrl+W");
         assert_eq!(bindings[&Action::OpenSettings].to_string(), "Ctrl+,");
     }
 }
