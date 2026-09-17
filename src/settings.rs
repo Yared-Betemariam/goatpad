@@ -17,10 +17,38 @@ pub struct Settings {
     pub keybindings: HashMap<Action, Keybinding>,
     #[serde(default = "default_auto_check_updates")]
     pub auto_check_updates: bool,
+    #[serde(default = "default_content_zoom")]
+    pub content_zoom: f32,
+    #[serde(default = "default_app_zoom")]
+    pub app_zoom: f32,
 }
 
 fn default_auto_check_updates() -> bool {
     true
+}
+
+fn default_content_zoom() -> f32 {
+    1.0
+}
+
+fn default_app_zoom() -> f32 {
+    1.0
+}
+
+fn normalized_content_zoom(zoom: f32) -> f32 {
+    if zoom.is_finite() {
+        zoom.clamp(0.5, 3.0)
+    } else {
+        1.0
+    }
+}
+
+fn normalized_app_zoom(zoom: f32) -> f32 {
+    if zoom.is_finite() && zoom > 0.0 {
+        zoom
+    } else {
+        1.0
+    }
 }
 
 /// A bad user-defined shortcut must never make the editor unable to start.
@@ -52,6 +80,8 @@ impl Default for Settings {
             theme: default_theme_name(),
             keybindings: default_bindings(),
             auto_check_updates: default_auto_check_updates(),
+            content_zoom: default_content_zoom(),
+            app_zoom: default_app_zoom(),
         }
     }
 }
@@ -68,6 +98,8 @@ impl Settings {
         for (action, binding) in default_bindings() {
             settings.keybindings.entry(action).or_insert(binding);
         }
+        settings.content_zoom = normalized_content_zoom(settings.content_zoom);
+        settings.app_zoom = normalized_app_zoom(settings.app_zoom);
         let normalized = serde_json::to_vec_pretty(&settings)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         if normalized != data {
@@ -110,6 +142,25 @@ mod tests {
                 .unwrap()
                 .contains("ControlLeft")
         );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn zoom_settings_migrate_and_normalize() {
+        let directory = std::env::temp_dir().join(format!("goatpad-test-{}", uuid::Uuid::new_v4()));
+        let paths = AppPaths::for_test(directory.clone()).unwrap();
+        fs::write(
+            paths.settings_path(),
+            r#"{"theme":"default-dark","keybindings":{},"content_zoom":9.0,"app_zoom":1.25}"#,
+        )
+        .unwrap();
+
+        let settings = Settings::load(&paths).unwrap();
+        assert_eq!(settings.content_zoom, 3.0);
+        assert_eq!(settings.app_zoom, 1.25);
+
+        let saved = fs::read_to_string(paths.settings_path()).unwrap();
+        assert!(saved.contains("\"content_zoom\": 3.0"));
         fs::remove_dir_all(directory).unwrap();
     }
 }

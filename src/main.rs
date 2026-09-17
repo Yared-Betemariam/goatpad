@@ -129,6 +129,7 @@ impl GoatpadApp {
     fn new(paths: AppPaths, mut session: Session, ctx: &egui::Context) -> std::io::Result<Self> {
         let (mut workspace, startup_warnings) = Workspace::load(paths.clone())?;
         let settings = Settings::load(&paths)?;
+        let content_zoom = settings.content_zoom;
         ensure_default_themes(&paths)?;
         let themes = load_themes(&paths)?;
         let theme_draft = themes
@@ -138,6 +139,7 @@ impl GoatpadApp {
             .unwrap_or_else(Theme::default_dark);
         install_fonts(ctx);
         apply_theme(ctx, &theme_draft);
+        ctx.set_zoom_factor(settings.app_zoom);
         let note_ids = workspace
             .documents
             .iter()
@@ -200,7 +202,7 @@ impl GoatpadApp {
                     kind: ToastKind::Error,
                 })
                 .collect(),
-            zoom: 1.0,
+            zoom: content_zoom,
             update_status: UpdateStatus::Idle,
             update_receiver: None,
         };
@@ -224,6 +226,29 @@ impl GoatpadApp {
             shown_at: Instant::now(),
             kind: ToastKind::Success,
         });
+    }
+
+    fn save_zoom_settings(&mut self) {
+        if let Err(error) = self.settings.save(&self.paths) {
+            self.report_error(format!("Could not save zoom settings: {error}"));
+        }
+    }
+
+    fn set_content_zoom(&mut self, zoom: f32) {
+        let zoom = zoom.clamp(0.5, 3.0);
+        if (self.zoom - zoom).abs() > f32::EPSILON {
+            self.zoom = zoom;
+            self.settings.content_zoom = zoom;
+            self.save_zoom_settings();
+        }
+    }
+
+    fn persist_app_zoom(&mut self, ctx: &egui::Context) {
+        let zoom = ctx.zoom_factor();
+        if zoom.is_finite() && zoom > 0.0 && (self.settings.app_zoom - zoom).abs() > f32::EPSILON {
+            self.settings.app_zoom = zoom;
+            self.save_zoom_settings();
+        }
     }
 
     fn poll_writer_results(&mut self) {
@@ -1840,15 +1865,15 @@ impl eframe::App for GoatpadApp {
                         });
                         ui.separator();
                         if ui.button("Zoom in").clicked() {
-                            self.zoom = (self.zoom + 0.1).min(3.0);
+                            self.set_content_zoom(self.zoom + 0.1);
                             ui.close();
                         }
                         if ui.button("Zoom out").clicked() {
-                            self.zoom = (self.zoom - 0.1).max(0.5);
+                            self.set_content_zoom(self.zoom - 0.1);
                             ui.close();
                         }
                         if ui.button("Reset zoom").clicked() {
-                            self.zoom = 1.0;
+                            self.set_content_zoom(1.0);
                             ui.close();
                         }
                     });
@@ -2322,7 +2347,7 @@ impl eframe::App for GoatpadApp {
                                     .on_hover_text("Zoom in")
                                     .clicked()
                                 {
-                                    self.zoom = (self.zoom + 0.1).min(3.0);
+                                    self.set_content_zoom(self.zoom + 0.1);
                                 }
                                 if ui
                                     .add(
@@ -2332,7 +2357,7 @@ impl eframe::App for GoatpadApp {
                                     .on_hover_text("Reset zoom")
                                     .clicked()
                                 {
-                                    self.zoom = 1.0;
+                                    self.set_content_zoom(1.0);
                                 }
                                 if ui
                                     .add(
@@ -2344,7 +2369,7 @@ impl eframe::App for GoatpadApp {
                                     .on_hover_text("Zoom out")
                                     .clicked()
                                 {
-                                    self.zoom = (self.zoom - 0.1).max(0.5);
+                                    self.set_content_zoom(self.zoom - 0.1);
                                 }
                             });
                         });
@@ -2569,6 +2594,7 @@ impl eframe::App for GoatpadApp {
         {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
+        self.persist_app_zoom(&ctx);
         show_resize_handles(&ctx);
     }
 
@@ -2578,6 +2604,7 @@ impl eframe::App for GoatpadApp {
         }
         self.flush_all_now();
         self.save_session();
+        self.save_zoom_settings();
     }
 }
 

@@ -15,7 +15,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 - Automatic note titles derived from the first line (up to 20 characters), with custom titles via double-click on a tab (renamed in place)
 - Import and export of all notes through portable JSON backups
 - Live Markdown highlighting and common formatting actions, available from the action bar, the Edit menu, or keyboard shortcuts
-- A Notepad-style status bar with smaller, reduced-opacity footer text, cursor position, character count, document type, zoom control, line-ending, and encoding
+- A Notepad-style status bar with smaller, reduced-opacity footer text, cursor position, character count, document type, zoom control, line-ending, and encoding; content zoom and Ctrl-based app zoom persist between launches
 - Automatic background saving
 - Workspace and window restoration between launches
 - Tabbed Settings window with full theme CRUD (create, duplicate, edit, delete), theme-aware editor text, and separate System and Content font selections
