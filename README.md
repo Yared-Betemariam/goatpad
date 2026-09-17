@@ -129,6 +129,8 @@ The `version` must be newer than the installed version. The MSI URL and manifest
 
 Formatting shortcuts only apply to Markdown notes. Shortcuts can be changed from the Keyboard tab in application settings.
 
+While editing a note, `Tab` inserts an indentation tab; `Ctrl+Tab` and `Ctrl+Shift+Tab` continue to switch between tabs.
+
 ## The action bar
 
 Goatpad unifies the application menus and formatting tools into a single, height-constant action bar:

@@ -2483,6 +2483,7 @@ impl eframe::App for GoatpadApp {
                             .id(editor_id)
                             .desired_width(ui.available_width())
                             .desired_rows((available_height / line_height).ceil().max(1.0) as usize)
+                            .lock_focus(true)
                             .frame(egui::Frame::NONE)
                             .layouter(&mut layouter)
                             .show(ui)
