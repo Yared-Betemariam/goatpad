@@ -27,9 +27,7 @@ use paths::AppPaths;
 use persistence::{SaveRequest, SaveResult, start_writer_thread};
 use session::{Session, TabState, WindowGeom};
 use settings::Settings;
-use theme::{
-    FONT_OPTIONS, Theme, apply_theme, ensure_default_themes, install_fonts, load_themes, save_theme,
-};
+use theme::{Theme, apply_theme, ensure_default_themes, install_fonts, load_themes, save_theme};
 use updates::{ReleaseManifest, UpdateEvent};
 use workspace::Workspace;
 
@@ -112,6 +110,7 @@ struct GoatpadApp {
     settings_open: bool,
     settings_tab: SettingsTab,
     rebinding: Option<Action>,
+    font_options: Vec<String>,
     themes: Vec<Theme>,
     theme_draft: Theme,
     title_bar_color: egui::Color32,
@@ -141,7 +140,7 @@ impl GoatpadApp {
             .find(|theme| theme.name == settings.theme)
             .cloned()
             .unwrap_or_else(Theme::default_dark);
-        install_fonts(ctx);
+        let font_options = install_fonts(ctx);
         apply_theme(ctx, &theme_draft);
         ctx.set_zoom_factor(settings.app_zoom);
         let note_ids = workspace
@@ -189,6 +188,7 @@ impl GoatpadApp {
             settings_open: false,
             settings_tab: SettingsTab::default(),
             rebinding: None,
+            font_options,
             themes,
             title_bar_color: theme_draft.title_bar_color(),
             theme_draft,
@@ -564,12 +564,21 @@ impl GoatpadApp {
 
             ui.add_space(6.0);
             ui.label(egui::RichText::new("Typography").strong());
+            ui.label(format!(
+                "{} installed font{} available (Goatpad checks this computer at startup)",
+                self.font_options.len(),
+                if self.font_options.len() == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            ));
             egui::ComboBox::from_label("System font")
                 .selected_text(&draft.system_font)
                 .show_ui(ui, |ui| {
-                    for font in FONT_OPTIONS {
+                    for font in &self.font_options {
                         changed |= ui
-                            .selectable_value(&mut draft.system_font, (*font).to_owned(), *font)
+                            .selectable_value(&mut draft.system_font, font.clone(), font)
                             .changed();
                     }
                 });
@@ -577,9 +586,9 @@ impl GoatpadApp {
             egui::ComboBox::from_label("Content font")
                 .selected_text(&draft.content_font)
                 .show_ui(ui, |ui| {
-                    for font in FONT_OPTIONS {
+                    for font in &self.font_options {
                         changed |= ui
-                            .selectable_value(&mut draft.content_font, (*font).to_owned(), *font)
+                            .selectable_value(&mut draft.content_font, font.clone(), font)
                             .changed();
                     }
                 });

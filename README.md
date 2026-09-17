@@ -158,7 +158,7 @@ Each theme stores two independent font settings:
 - **System font**: Applied to application chrome (title bar, tabs, action bar, status bar, and dialogs).
 - **Content font**: Applied strictly to the note editor text area (Markdown and plain text).
 
-Choices include Segoe UI (standard Windows font), Georgia, Cambria, Times New Roman, Arial, Consolas, and the built-in Sans and Monospace options.
+Goatpad includes a catalog of 50 font choices, including Segoe UI, Georgia, Cambria, Times New Roman, Arial, Consolas, Calibri, Cascadia Code, Fira Code, Inter, JetBrains Mono, Lato, Open Sans, Raleway, Roboto, Roboto Mono, Source Code Pro, Ubuntu, and more, plus the built-in Sans and Monospace options. On Windows, Goatpad checks both machine-wide and per-user font registrations when it starts and adds only catalog fonts whose files are actually installed. This means fonts such as Inter or JetBrains Mono appear automatically after they are installed, without bundling or scanning every font on the computer. When a family has separate registered faces, Goatpad prefers its regular/normal/variable face, then medium, and does not use bold, semibold, italic, or oblique faces as the default.
 
 ## Note titles
 
