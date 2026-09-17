@@ -121,6 +121,7 @@ struct GoatpadApp {
     renaming_document: Option<Uuid>,
     rename_buffer: String,
     focus_rename: bool,
+    scrolled_to_active_tab: Option<Uuid>,
     workspace_index_dirty: bool,
     toasts: Vec<Toast>,
     zoom: f32,
@@ -197,6 +198,7 @@ impl GoatpadApp {
             renaming_document: None,
             rename_buffer: String::new(),
             focus_rename: false,
+            scrolled_to_active_tab: None,
             workspace_index_dirty: false,
             toasts: startup_warnings
                 .into_iter()
@@ -1582,6 +1584,12 @@ impl eframe::App for GoatpadApp {
                                             }
                                             if response.double_clicked() {
                                                 requested_rename = Some(*id);
+                                            }
+                                            if is_active
+                                                && self.scrolled_to_active_tab != Some(*id)
+                                            {
+                                                response.scroll_to_me(Some(egui::Align::Center));
+                                                self.scrolled_to_active_tab = Some(*id);
                                             }
                                         }
                                             }
