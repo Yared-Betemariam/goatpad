@@ -1169,6 +1169,44 @@ impl GoatpadApp {
     }
 }
 
+/// Sizing for a single title-bar tab, derived from the active theme's font
+/// size so the tab's label, close button, and padding stay proportional and
+/// unclipped within the fixed `TITLE_TAB_HEIGHT`, instead of using fixed
+/// margins tuned for a single font size.
+struct TabMetrics {
+    label_size: f32,
+    close_button_size: f32,
+    margin: egui::Margin,
+}
+
+impl TabMetrics {
+    fn for_font_size(font_size: f32) -> Self {
+        let label_size = font_size * 0.85;
+        // Approximate rendered line height for the label text; egui text
+        // rows generally paint a bit taller than the nominal font size.
+        let estimated_label_height = label_size * 1.25;
+        let close_button_size = (label_size + 4.0).clamp(16.0, 22.0);
+        let content_height = estimated_label_height.max(close_button_size);
+        // Split the remaining vertical space with a 2:1 top/bottom bias,
+        // matching the original hand-tuned padding, while shrinking as
+        // needed so larger fonts never overflow the fixed tab height.
+        let available_margin = (TITLE_TAB_HEIGHT - content_height).max(3.0);
+        let top = (available_margin * (2.0 / 3.0)).clamp(2.0, 8.0);
+        let bottom = (available_margin - top).clamp(1.0, 8.0);
+        let horizontal = (label_size * 0.9).clamp(8.0, 14.0);
+        Self {
+            label_size,
+            close_button_size,
+            margin: egui::Margin {
+                left: horizontal.round() as i8,
+                right: horizontal.round() as i8,
+                top: top.round() as i8,
+                bottom: bottom.round() as i8,
+            },
+        }
+    }
+}
+
 /// Paints the small application icon shown at the left of the title bar.
 /// It is purely decorative, matching Notepad's non-interactive app icon.
 fn show_app_icon(ui: &mut egui::Ui, app_icon_texture: &egui::TextureHandle) {
@@ -1483,6 +1521,8 @@ impl eframe::App for GoatpadApp {
                                     )
                                     .show(ui, |ui| {
                                         ui.horizontal(|ui| {
+                                            let tab_metrics =
+                                                TabMetrics::for_font_size(self.theme_draft.font_size);
                                             for (id, title) in &tabs {
                                         if self.renaming_document == Some(*id) {
                                             let response = ui.add(
@@ -1527,15 +1567,9 @@ impl eframe::App for GoatpadApp {
                                                     sw: 0,
                                                     se: 0,
                                                 })
-                                                .inner_margin(egui::Margin {
-                                                    right: 12,
-                                                    left: 12,
-                                                    top: 8,
-                                                    bottom: 4,
-                                                })
+                                                .inner_margin(tab_metrics.margin)
                                                 .show(ui, |ui| {
-                                                    let tab_label_size =
-                                                        self.theme_draft.font_size * 0.85;
+                                                    let tab_label_size = tab_metrics.label_size;
                                                     ui.with_layout(
                                                         egui::Layout::left_to_right(
                                                             egui::Align::TOP,
@@ -1559,7 +1593,10 @@ impl eframe::App for GoatpadApp {
                                                                     .frame_when_inactive(false)
                                                                     .corner_radius(5)
                                                                     .min_size(egui::vec2(
-                                                                        18.0, 18.0,
+                                                                        tab_metrics
+                                                                            .close_button_size,
+                                                                        tab_metrics
+                                                                            .close_button_size,
                                                                     )),
                                                                 )
                                                                 .on_hover_text("Close tab");
@@ -2618,17 +2655,49 @@ impl eframe::App for GoatpadApp {
             .retain(|toast| now.duration_since(toast.shown_at) < Duration::from_secs(8));
         if !self.toasts.is_empty() {
             egui::Area::new(egui::Id::new("status_toasts"))
-                .anchor(egui::Align2::RIGHT_BOTTOM, [-12.0, -12.0])
+                .anchor(egui::Align2::RIGHT_BOTTOM, [-16.0, -16.0])
+                .order(egui::Order::Foreground)
                 .show(&ctx, |ui| {
-                    egui::Frame::popup(ui.style()).show(ui, |ui| {
-                        for toast in &self.toasts {
-                            let color = match toast.kind {
-                                ToastKind::Error => egui::Color32::from_rgb(235, 105, 105),
-                                ToastKind::Success => egui::Color32::from_rgb(107, 193, 123),
-                            };
-                            ui.colored_label(color, &toast.message);
-                        }
-                    });
+                    ui.set_max_width(360.0);
+                    ui.spacing_mut().item_spacing = egui::vec2(0.0, 8.0);
+
+                    for toast in &self.toasts {
+                        let (color, icon) = match toast.kind {
+                            ToastKind::Error => (
+                                egui::Color32::from_rgb(235, 105, 105),
+                                egui_phosphor::regular::WARNING_CIRCLE,
+                            ),
+                            ToastKind::Success => (
+                                egui::Color32::from_rgb(107, 193, 123),
+                                egui_phosphor::regular::CHECK_CIRCLE,
+                            ),
+                        };
+                        let frame_fill = ui.visuals().window_fill.lerp_to_gamma(color, 0.08);
+
+                        egui::Frame::popup(ui.style())
+                            .fill(frame_fill)
+                            .stroke(egui::Stroke::new(1.0, color.gamma_multiply(0.75)))
+                            .corner_radius(egui::CornerRadius::same(8))
+                            .inner_margin(egui::Margin {
+                                left: 12,
+                                right: 12,
+                                top: 10,
+                                bottom: 10,
+                            })
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new(icon).size(18.0).color(color));
+                                    ui.add_space(8.0);
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(&toast.message)
+                                                .color(ui.visuals().text_color()),
+                                        )
+                                        .wrap(),
+                                    );
+                                });
+                            });
+                    }
                 });
         }
 
