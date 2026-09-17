@@ -40,6 +40,8 @@ const ACTION_BAR_HEIGHT: f32 = 36.0;
 const TITLE_BAR_SPACING: f32 = 6.0;
 const TITLE_CONTROL_WIDTH: f32 = 32.0;
 const WINDOW_BUTTON_WIDTH: f32 = 46.0;
+const DOCUMENT_VIEW_VERTICAL_PADDING: i8 = 21;
+const DOCUMENT_VIEW_HORIZONTAL_PADDING: i8 = 12;
 const MIN_DRAG_WIDTH: f32 = 12.0;
 const RESIZE_BORDER_WIDTH: f32 = 5.0;
 const RESIZE_CORNER_SIZE: f32 = 14.0;
@@ -2431,10 +2433,10 @@ impl eframe::App for GoatpadApp {
                 egui::Frame::new()
                     .fill(ui.style().visuals.panel_fill)
                     .inner_margin(egui::Margin {
-                        top: 21,
-                        bottom: 21,
-                        right: 18,
-                        left: 18,
+                        top: 0,
+                        bottom: 0,
+                        right: 6,
+                        left: 6,
                     }),
             )
             .show(ui, |ui| {
@@ -2475,6 +2477,12 @@ impl eframe::App for GoatpadApp {
                     };
                 let output = egui::ScrollArea::vertical()
                     .id_salt(("editor-scroll", document_id))
+                    .content_margin(egui::Margin {
+                        top: DOCUMENT_VIEW_VERTICAL_PADDING,
+                        bottom: DOCUMENT_VIEW_VERTICAL_PADDING,
+                        right: DOCUMENT_VIEW_HORIZONTAL_PADDING,
+                        left: DOCUMENT_VIEW_HORIZONTAL_PADDING,
+                    })
                     .vertical_scroll_offset(self.scroll_offset)
                     .show(ui, |ui| {
                         let available_height = ui.available_height();
