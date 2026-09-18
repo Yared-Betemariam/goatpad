@@ -21,6 +21,8 @@ pub struct Settings {
     pub content_zoom: f32,
     #[serde(default = "default_app_zoom")]
     pub app_zoom: f32,
+    #[serde(default = "default_spellcheck_enabled")]
+    pub spellcheck_enabled: bool,
 }
 
 fn default_auto_check_updates() -> bool {
@@ -33,6 +35,10 @@ fn default_content_zoom() -> f32 {
 
 fn default_app_zoom() -> f32 {
     1.0
+}
+
+fn default_spellcheck_enabled() -> bool {
+    true
 }
 
 fn normalized_content_zoom(zoom: f32) -> f32 {
@@ -82,6 +88,7 @@ impl Default for Settings {
             auto_check_updates: default_auto_check_updates(),
             content_zoom: default_content_zoom(),
             app_zoom: default_app_zoom(),
+            spellcheck_enabled: default_spellcheck_enabled(),
         }
     }
 }

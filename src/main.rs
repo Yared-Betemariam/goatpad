@@ -2,6 +2,7 @@
 
 use eframe::egui;
 use std::{
+    ops::Range,
     sync::mpsc::{Receiver, Sender, TryRecvError},
     time::{Duration, Instant},
 };
@@ -16,6 +17,7 @@ mod paths;
 mod persistence;
 mod session;
 mod settings;
+mod spellcheck;
 mod theme;
 mod updates;
 mod workspace;
@@ -27,6 +29,7 @@ use paths::AppPaths;
 use persistence::{SaveRequest, SaveResult, start_writer_thread};
 use session::{Session, TabState, WindowGeom};
 use settings::Settings;
+use spellcheck::SpellChecker;
 use theme::{Theme, apply_theme, ensure_default_themes, install_fonts, load_themes, save_theme};
 use updates::{ReleaseManifest, UpdateEvent};
 use workspace::Workspace;
@@ -126,6 +129,29 @@ struct GoatpadApp {
     zoom: f32,
     update_status: UpdateStatus,
     update_receiver: Option<Receiver<UpdateEvent>>,
+    spellchecker: SpellChecker,
+    spellcheck_cache: SpellcheckCache,
+    spellcheck_menu: Option<SpellcheckMenuTarget>,
+}
+
+/// Caches the most recent spell-check pass so the (comparatively expensive)
+/// OS spell-checker call only re-runs when the active document or its
+/// content actually changes, rather than on every frame.
+#[derive(Default)]
+struct SpellcheckCache {
+    document_id: Option<Uuid>,
+    content_hash: u64,
+    ranges: Vec<Range<usize>>,
+}
+
+/// The misspelled word the user last right-clicked, kept alive while the
+/// spell-check context menu is open.
+#[derive(Clone)]
+struct SpellcheckMenuTarget {
+    document_id: Uuid,
+    range: Range<usize>,
+    word: String,
+    suggestions: Vec<String>,
 }
 
 impl GoatpadApp {
@@ -211,6 +237,9 @@ impl GoatpadApp {
             zoom: content_zoom,
             update_status: UpdateStatus::Idle,
             update_receiver: None,
+            spellchecker: SpellChecker::new(),
+            spellcheck_cache: SpellcheckCache::default(),
+            spellcheck_menu: None,
         };
         if app.settings.auto_check_updates && !config::UPDATE_MANIFEST_URL.is_empty() {
             app.check_for_updates();
@@ -264,9 +293,9 @@ impl GoatpadApp {
         }
     }
 
-    fn save_zoom_settings(&mut self) {
+    fn save_settings(&mut self) {
         if let Err(error) = self.settings.save(&self.paths) {
-            self.report_error(format!("Could not save zoom settings: {error}"));
+            self.report_error(format!("Could not save settings: {error}"));
         }
     }
 
@@ -275,7 +304,7 @@ impl GoatpadApp {
         if (self.zoom - zoom).abs() > f32::EPSILON {
             self.zoom = zoom;
             self.settings.content_zoom = zoom;
-            self.save_zoom_settings();
+            self.save_settings();
         }
     }
 
@@ -283,7 +312,7 @@ impl GoatpadApp {
         let zoom = ctx.zoom_factor();
         if zoom.is_finite() && zoom > 0.0 && (self.settings.app_zoom - zoom).abs() > f32::EPSILON {
             self.settings.app_zoom = zoom;
-            self.save_zoom_settings();
+            self.save_settings();
         }
     }
 
@@ -1176,6 +1205,122 @@ impl GoatpadApp {
     fn apply_table_insert(&mut self, ctx: &egui::Context) {
         self.apply_text_transform(ctx, formatting::insert_table);
     }
+
+    /// Recomputes (or reuses a cached) list of misspelled UTF-8 byte ranges
+    /// for `document_id`'s current content, using the OS spell checker.
+    fn spellcheck_ranges(&mut self, document_id: Uuid) -> Vec<Range<usize>> {
+        if !self.settings.spellcheck_enabled {
+            self.spellcheck_cache = SpellcheckCache::default();
+            return Vec::new();
+        }
+        let content_hash = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            self.workspace.active_document().content.hash(&mut hasher);
+            hasher.finish()
+        };
+        if self.spellcheck_cache.document_id != Some(document_id)
+            || self.spellcheck_cache.content_hash != content_hash
+        {
+            let ranges = self
+                .spellchecker
+                .check(&self.workspace.active_document().content);
+            self.spellcheck_cache = SpellcheckCache {
+                document_id: Some(document_id),
+                content_hash,
+                ranges,
+            };
+        }
+        self.spellcheck_cache.ranges.clone()
+    }
+
+    /// Forces the next frame to re-run the spell checker, e.g. after editing
+    /// the dictionary or replacing a misspelled word.
+    fn invalidate_spellcheck_cache(&mut self) {
+        self.spellcheck_cache = SpellcheckCache::default();
+    }
+
+    /// Finds the misspelled-word range (if any) under a click at `char_index`
+    /// within `content`, given the currently-known misspelled ranges.
+    fn spellcheck_target_at(
+        content: &str,
+        misspelled: &[Range<usize>],
+        char_index: usize,
+    ) -> Option<Range<usize>> {
+        let byte_index = formatting::byte_index(content, char_index);
+        misspelled
+            .iter()
+            .find(|range| byte_index >= range.start && byte_index <= range.end)
+            .cloned()
+    }
+
+    /// Replaces a misspelled word's byte range with `replacement`, then
+    /// places the cursor immediately after it.
+    fn replace_misspelled_word(
+        &mut self,
+        ctx: &egui::Context,
+        range: Range<usize>,
+        replacement: &str,
+    ) {
+        let editor_id = self.editor_id();
+        let document = self.workspace.active_document_mut();
+        if range.end > document.content.len() {
+            return;
+        }
+        document.content.replace_range(range.clone(), replacement);
+        let prefix_chars = document.content[..range.start].chars().count();
+        let new_char_index = prefix_chars + replacement.chars().count();
+
+        let mut state =
+            egui::widgets::text_edit::TextEditState::load(ctx, editor_id).unwrap_or_default();
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::one(
+                egui::text::CCursor::new(new_char_index),
+            )));
+        state.store(ctx, editor_id);
+        self.cursor_offset = new_char_index;
+        self.mark_active_document_edited();
+        self.invalidate_spellcheck_cache();
+    }
+
+    /// Renders the "Add to dictionary" / suggestions context menu for the
+    /// word most recently right-clicked in the editor.
+    fn render_spellcheck_context_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let Some(target) = self.spellcheck_menu.clone() else {
+            return;
+        };
+        if self.workspace.active_document().id != target.document_id {
+            return;
+        }
+        if target.suggestions.is_empty() {
+            ui.add_enabled(false, egui::Button::new("No spelling suggestions"));
+        } else {
+            for suggestion in &target.suggestions {
+                if ui.button(suggestion).clicked() {
+                    self.replace_misspelled_word(ctx, target.range.clone(), suggestion);
+                    self.spellcheck_menu = None;
+                    ui.close();
+                }
+            }
+        }
+        ui.separator();
+        if ui
+            .button(format!("Add \"{}\" to dictionary", target.word))
+            .clicked()
+        {
+            self.spellchecker.add_to_dictionary(&target.word);
+            self.invalidate_spellcheck_cache();
+            self.spellcheck_menu = None;
+            ui.close();
+        }
+        if ui.button("Ignore").clicked() {
+            self.spellchecker.ignore(&target.word);
+            self.invalidate_spellcheck_cache();
+            self.spellcheck_menu = None;
+            ui.close();
+        }
+    }
 }
 
 /// Sizing for a single title-bar tab, derived from the active theme's font
@@ -1939,6 +2084,26 @@ impl eframe::App for GoatpadApp {
                             }
                             ui.separator();
                         }
+                        let spellcheck_available = self.spellchecker.is_available();
+                        let spellcheck_response = ui
+                            .add_enabled_ui(spellcheck_available, |ui| {
+                                ui.selectable_label(
+                                    self.settings.spellcheck_enabled,
+                                    "Check spelling",
+                                )
+                            })
+                            .inner
+                            .on_hover_text(if spellcheck_available {
+                                "Underline misspelled words in red, using Windows' spell checker"
+                            } else {
+                                "Windows' spell checker is unavailable on this system"
+                            });
+                        if spellcheck_response.clicked() {
+                            self.settings.spellcheck_enabled = !self.settings.spellcheck_enabled;
+                            self.save_settings();
+                            ui.close();
+                        }
+                        ui.separator();
                         ui.menu_button("Theme", |ui| {
                             for theme in self.themes.clone() {
                                 if ui
@@ -2519,12 +2684,26 @@ impl eframe::App for GoatpadApp {
                     egui::Color32::BLACK
                 };
                 let editor_id = self.editor_id();
+                let misspelled_ranges = self.spellcheck_ranges(document_id);
+                let layouter_misspelled = misspelled_ranges.clone();
                 let mut layouter =
                     move |ui: &egui::Ui, buffer: &dyn egui::TextBuffer, wrap_width: f32| {
                         let mut job = if is_markdown {
-                            highlighting::highlight(buffer.as_str(), zoom, &font_family, text_color)
+                            highlighting::highlight(
+                                buffer.as_str(),
+                                zoom,
+                                &font_family,
+                                text_color,
+                                &layouter_misspelled,
+                            )
                         } else {
-                            highlighting::plain(buffer.as_str(), zoom, &font_family, text_color)
+                            highlighting::plain(
+                                buffer.as_str(),
+                                zoom,
+                                &font_family,
+                                text_color,
+                                &layouter_misspelled,
+                            )
                         };
                         job.wrap.max_width = wrap_width;
                         ui.fonts_mut(|fonts| fonts.layout_job(job))
@@ -2572,6 +2751,30 @@ impl eframe::App for GoatpadApp {
                 }
                 if editor.response.changed() {
                     self.mark_active_document_edited();
+                }
+                if editor.response.secondary_clicked() {
+                    let clicked_target = editor.response.interact_pointer_pos().and_then(|pos| {
+                        let local = pos - editor.galley_pos;
+                        let char_index = editor.galley.cursor_from_pos(local).index.0;
+                        let content = &self.workspace.active_document().content;
+                        Self::spellcheck_target_at(content, &misspelled_ranges, char_index)
+                    });
+                    self.spellcheck_menu = clicked_target.map(|range| {
+                        let word =
+                            self.workspace.active_document().content[range.clone()].to_owned();
+                        let suggestions = self.spellchecker.suggestions(&word);
+                        SpellcheckMenuTarget {
+                            document_id,
+                            range,
+                            word,
+                            suggestions,
+                        }
+                    });
+                }
+                if self.spellcheck_menu.is_some() {
+                    editor.response.context_menu(|ui| {
+                        self.render_spellcheck_context_menu(ui, &ctx);
+                    });
                 }
             });
 
@@ -2740,7 +2943,7 @@ impl eframe::App for GoatpadApp {
         }
         self.flush_all_now();
         self.save_session();
-        self.save_zoom_settings();
+        self.save_settings();
     }
 }
 

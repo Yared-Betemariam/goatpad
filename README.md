@@ -25,6 +25,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 - Configurable keyboard shortcuts
 - Local storage with no account or cloud service required
 - Optional in-app MSI updates: an HTTPS release manifest configured in `src/config.rs` can be checked, downloaded, verified, and installed from Settings → Updates
+- Spell checking powered by the same Windows Spell Checking API (`ISpellChecker`) used by Notepad: misspelled words are underlined in red as you type, and right-clicking one offers dictionary-quality replacement suggestions, "Add to dictionary", and "Ignore". Toggle it from View → Check spelling
 
 ## Requirements
 
