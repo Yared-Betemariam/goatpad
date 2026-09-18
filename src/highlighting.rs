@@ -27,25 +27,49 @@ impl Style {
         }
     }
 
-    fn format(self, zoom: f32, font_family: &FontFamily, text_color: Color32) -> TextFormat {
+    fn format(
+        self,
+        zoom: f32,
+        font_family: &FontFamily,
+        text_color: Color32,
+        dark_mode: bool,
+    ) -> TextFormat {
         let mut format = default_format(zoom, font_family, text_color);
         match self {
             Self::Heading => {
-                format.font_id = FontId::new(20.0 * zoom, font_family.clone());
-                format.color = Color32::from_rgb(111, 168, 255);
+                format.color = if dark_mode {
+                    Color32::from_rgb(137, 190, 255)
+                } else {
+                    Color32::from_rgb(42, 91, 166)
+                };
             }
-            Self::Strong => format.font_id = FontId::new(16.0 * zoom, font_family.clone()),
+            Self::Strong => {}
             Self::Emphasis => format.italics = true,
             Self::Code => {
-                format.font_id = FontId::new(15.0 * zoom, FontFamily::Monospace);
-                format.color = Color32::from_rgb(232, 177, 94);
-                format.background = Color32::from_rgb(45, 45, 50);
+                format.font_id = FontId::new(16.0 * zoom, FontFamily::Monospace);
+                if dark_mode {
+                    format.color = Color32::from_rgb(255, 196, 107);
+                    format.background = Color32::from_rgb(55, 55, 62);
+                } else {
+                    format.color = Color32::from_rgb(155, 83, 14);
+                    format.background = Color32::from_rgb(244, 237, 222);
+                }
             }
             Self::Link => {
-                format.color = Color32::from_rgb(97, 183, 255);
+                format.color = if dark_mode {
+                    Color32::from_rgb(120, 205, 255)
+                } else {
+                    Color32::from_rgb(26, 98, 160)
+                };
                 format.underline = Stroke::new(1.0, format.color);
             }
-            Self::List => format.color = Color32::from_rgb(132, 205, 150),
+            Self::List => {
+                format.color = if dark_mode {
+                    Color32::from_rgb(155, 226, 170)
+                } else {
+                    Color32::from_rgb(35, 120, 70)
+                };
+            }
         }
         format
     }
@@ -74,6 +98,8 @@ fn mark_find_match(mut format: TextFormat) -> TextFormat {
 
 /// Produces a live Markdown layout while preserving the editor's original text.
 /// `zoom` scales every font size uniformly, mirroring Notepad's zoom control.
+/// `dark_mode` selects brighter syntax colors for dark themes and darker colors
+/// for light themes.
 /// `misspelled` lists the UTF-8 byte ranges that should be underlined in red.
 /// `find_matches` lists ranges that should receive a yellow background.
 pub fn highlight(
@@ -81,6 +107,7 @@ pub fn highlight(
     zoom: f32,
     font_family: &FontFamily,
     text_color: Color32,
+    dark_mode: bool,
     misspelled: &[Range<usize>],
     find_matches: &[Range<usize>],
 ) -> LayoutJob {
@@ -119,6 +146,7 @@ pub fn highlight(
         zoom,
         font_family,
         text_color,
+        dark_mode,
         misspelled,
         find_matches,
     )
@@ -140,6 +168,7 @@ pub fn plain(
         zoom,
         font_family,
         text_color,
+        false,
         misspelled,
         find_matches,
     )
@@ -173,6 +202,7 @@ fn layout_with_spans(
     zoom: f32,
     font_family: &FontFamily,
     text_color: Color32,
+    dark_mode: bool,
     misspelled: &[Range<usize>],
     find_matches: &[Range<usize>],
 ) -> LayoutJob {
@@ -194,7 +224,7 @@ fn layout_with_spans(
     let format_at = |style: Option<Style>, is_misspelled: bool, is_find_match: bool| {
         let format = style.map_or_else(
             || default_format(zoom, font_family, text_color),
-            |style| style.format(zoom, font_family, text_color),
+            |style| style.format(zoom, font_family, text_color, dark_mode),
         );
         let format = if is_misspelled {
             mark_misspelled(format, zoom)
@@ -264,6 +294,7 @@ mod tests {
             1.0,
             &FontFamily::Proportional,
             Color32::DARK_GRAY,
+            false,
             &[],
             &[],
         );
@@ -325,6 +356,7 @@ mod tests {
             1.0,
             &FontFamily::Proportional,
             Color32::DARK_GRAY,
+            false,
             &[2..12],
             &[],
         );
@@ -334,7 +366,7 @@ mod tests {
             .iter()
             .find(|section| section.format.underline.width > 0.0)
             .expect("expected a misspelled section to be underlined");
-        // The word is still bold (larger font), and now also underlined in red.
+        // The word keeps the normal editor font size and is also underlined in red.
         assert!(misspelled_section.format.font_id.size == 16.0);
         assert_eq!(
             misspelled_section.format.underline.color,
@@ -368,6 +400,7 @@ mod tests {
             1.0,
             &FontFamily::Proportional,
             Color32::DARK_GRAY,
+            false,
             &[],
             &[],
         );
@@ -377,7 +410,7 @@ mod tests {
             .map(|section| &section.format)
             .collect::<Vec<_>>();
 
-        assert!(formats.iter().any(|format| format.font_id.size >= 20.0));
+        assert!(formats.iter().all(|format| format.font_id.size == 16.0));
         assert!(formats.iter().any(|format| format.italics));
         assert!(formats.iter().any(|format| format.font_id.size == 16.0));
         assert!(
@@ -386,5 +419,42 @@ mod tests {
                 .any(|format| format.font_id.family == egui::FontFamily::Monospace)
         );
         assert!(formats.iter().any(|format| format.underline.width > 0.0));
+    }
+
+    #[test]
+    fn markdown_highlighting_uses_theme_appropriate_colors() {
+        let text = "# Heading\n`code` [link](https://example.com)\n- item";
+        let light = highlight(
+            text,
+            1.0,
+            &FontFamily::Proportional,
+            Color32::BLACK,
+            false,
+            &[],
+            &[],
+        );
+        let dark = highlight(
+            text,
+            1.0,
+            &FontFamily::Proportional,
+            Color32::WHITE,
+            true,
+            &[],
+            &[],
+        );
+
+        let light_heading = light
+            .sections
+            .iter()
+            .find(|section| section.format.color == Color32::from_rgb(42, 91, 166))
+            .expect("light heading should use the dark palette");
+        let dark_heading = dark
+            .sections
+            .iter()
+            .find(|section| section.format.color == Color32::from_rgb(137, 190, 255))
+            .expect("dark heading should use the light palette");
+
+        assert!(light_heading.format.font_id.size == 16.0);
+        assert!(dark_heading.format.font_id.size == 16.0);
     }
 }

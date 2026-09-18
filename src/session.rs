@@ -1,6 +1,9 @@
 use crate::{paths::AppPaths, persistence::atomic_write};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, io};
+use std::{
+    collections::{HashMap, HashSet},
+    fs, io,
+};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -25,6 +28,8 @@ pub struct Session {
     pub window: Option<WindowGeom>,
     #[serde(default)]
     pub tab_state: HashMap<Uuid, TabState>,
+    #[serde(default)]
+    pub markdown_previews: HashSet<Uuid>,
     #[serde(skip)]
     open_tabs_missing: bool,
 }
@@ -36,6 +41,7 @@ impl Default for Session {
             active_tab: None,
             window: None,
             tab_state: HashMap::new(),
+            markdown_previews: HashSet::new(),
             open_tabs_missing: true,
         }
     }
@@ -81,6 +87,16 @@ impl Session {
             self.active_tab = self.open_tabs.first().copied();
         }
         self.tab_state.retain(|id, _| note_ids.contains(id));
+        self.markdown_previews.retain(|id| note_ids.contains(id));
+    }
+
+    pub fn toggle_markdown_preview(&mut self, id: Uuid) -> bool {
+        if !self.markdown_previews.insert(id) {
+            self.markdown_previews.remove(&id);
+            false
+        } else {
+            true
+        }
     }
 
     pub fn open_tab(&mut self, id: Uuid) {
@@ -232,5 +248,20 @@ mod tests {
         assert_eq!(session.cycle_tab(true), Some(ids[1]));
         assert_eq!(session.cycle_tab(true), Some(ids[0]));
         assert_eq!(session.cycle_tab(false), Some(ids[1]));
+    }
+
+    #[test]
+    fn markdown_preview_toggles_and_discards_missing_notes() {
+        let id = Uuid::new_v4();
+        let mut session = Session::default();
+
+        assert!(session.toggle_markdown_preview(id));
+        assert!(session.markdown_previews.contains(&id));
+        assert!(!session.toggle_markdown_preview(id));
+        assert!(session.markdown_previews.is_empty());
+
+        session.toggle_markdown_preview(id);
+        session.prepare_open_tabs(&[]);
+        assert!(session.markdown_previews.is_empty());
     }
 }

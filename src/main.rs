@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use eframe::egui;
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use std::{
     ops::Range,
     sync::mpsc::{Receiver, Sender, TryRecvError},
@@ -487,6 +488,20 @@ impl GoatpadApp {
             self.close_find(ctx);
         } else if let Some(forward) = navigate {
             self.navigate_find(ctx, forward);
+        }
+    }
+
+    fn toggle_active_markdown_preview(&mut self) {
+        let Some(document_id) = self.session.active_tab else {
+            return;
+        };
+        if self
+            .workspace
+            .document(document_id)
+            .is_some_and(|document| document.kind == DocKind::Md)
+        {
+            self.session.toggle_markdown_preview(document_id);
+            self.save_session();
         }
     }
 
@@ -1355,6 +1370,7 @@ impl GoatpadApp {
             Action::FindInAllNotes => self.open_find(FindScope::AllNotes),
             Action::OpenTabsList => self.toggle_tabs_list(),
             Action::ToggleDocumentKind => self.toggle_active_document_kind(),
+            Action::ToggleMarkdownPreview => self.toggle_active_markdown_preview(),
             Action::OpenSettings => self.settings_open = !self.settings_open,
             action
                 if action.is_formatting()
@@ -1862,6 +1878,11 @@ impl eframe::App for GoatpadApp {
             .active_tab
             .and_then(|id| self.workspace.document(id))
             .is_some_and(|document| document.kind == DocKind::Md);
+        let markdown_preview_active = active_is_markdown
+            && self
+                .session
+                .active_tab
+                .is_some_and(|id| self.session.markdown_previews.contains(&id));
         let tabs = self
             .session
             .open_tabs
@@ -2632,8 +2653,12 @@ impl eframe::App for GoatpadApp {
                         ui.spacing_mut().button_padding = egui::vec2(8.0, 2.0);
 
                         if let Some(document_id) = self.session.active_tab {
-                            if let Some(document) = self.workspace.document(document_id) {
-                                let mut requested_kind = document.kind;
+                            if let Some(current_kind) = self
+                                .workspace
+                                .document(document_id)
+                                .map(|document| document.kind)
+                            {
+                                let mut requested_kind = current_kind;
                                 let primary = self.theme_draft.primary.0;
                                 let background = self.theme_draft.background.0;
                                 let normal_text = ui.visuals().text_color();
@@ -2692,7 +2717,46 @@ impl eframe::App for GoatpadApp {
                                 .clicked()
                                 .then(|| requested_kind = DocKind::Md);
 
-                                if requested_kind != document.kind {
+                                if current_kind == DocKind::Md {
+                                    ui.add_space(12.0);
+                                }
+
+                                if current_kind == DocKind::Md
+                                    && ui
+                                        .add(
+                                            egui::Button::new(
+                                                egui::RichText::new(egui_phosphor::regular::EYE)
+                                                    .color(if markdown_preview_active {
+                                                        primary
+                                                    } else {
+                                                        inactive_text
+                                                    }),
+                                            )
+                                            .fill(if markdown_preview_active {
+                                                primary.gamma_multiply(0.15)
+                                            } else {
+                                                background
+                                            })
+                                            .stroke(switcher_stroke)
+                                            .min_size(egui::vec2(24.0, 24.0))
+                                            .corner_radius(egui::CornerRadius {
+                                                nw: 5,
+                                                ne: 5,
+                                                sw: 5,
+                                                se: 5,
+                                            }),
+                                        )
+                                        .on_hover_text(if markdown_preview_active {
+                                            "Exit Markdown preview and unlock editing"
+                                        } else {
+                                            "Preview Markdown and lock editing"
+                                        })
+                                        .clicked()
+                                {
+                                    self.toggle_active_markdown_preview();
+                                }
+
+                                if requested_kind != current_kind {
                                     self.flush_active_now();
                                     if let Err(error) = self
                                         .workspace
@@ -2953,13 +3017,39 @@ impl eframe::App for GoatpadApp {
                     return;
                 }
                 let is_markdown = self.workspace.active_document().kind == DocKind::Md;
+                let preview_active =
+                    is_markdown && self.session.markdown_previews.contains(&document_id);
                 let zoom = self.zoom;
                 let font_family = self.theme_draft.content_font_family();
-                let text_color = if ui.visuals().dark_mode {
+                let dark_mode = ui.visuals().dark_mode;
+                let text_color = if dark_mode {
                     egui::Color32::WHITE
                 } else {
                     egui::Color32::BLACK
                 };
+                if preview_active {
+                    let output = egui::ScrollArea::vertical()
+                        .id_salt(("markdown-preview-scroll", document_id))
+                        .auto_shrink([false, true])
+                        .content_margin(egui::Margin {
+                            top: DOCUMENT_VIEW_VERTICAL_PADDING,
+                            bottom: DOCUMENT_VIEW_VERTICAL_PADDING,
+                            right: DOCUMENT_VIEW_HORIZONTAL_PADDING,
+                            left: DOCUMENT_VIEW_HORIZONTAL_PADDING,
+                        })
+                        .vertical_scroll_offset(self.scroll_offset)
+                        .show(ui, |ui| {
+                            render_markdown_preview(
+                                ui,
+                                &self.workspace.active_document().content,
+                                zoom,
+                                &font_family,
+                                text_color,
+                            );
+                        });
+                    self.scroll_offset = output.state.offset.y;
+                    return;
+                }
                 let editor_id = self.editor_id();
                 let misspelled_ranges = self.spellcheck_ranges(document_id);
                 let find_ranges = self.visible_find_ranges(document_id);
@@ -2973,6 +3063,7 @@ impl eframe::App for GoatpadApp {
                                 zoom,
                                 &font_family,
                                 text_color,
+                                dark_mode,
                                 &layouter_misspelled,
                                 &layouter_find_ranges,
                             )
@@ -3242,6 +3333,102 @@ impl eframe::App for GoatpadApp {
         self.save_session();
         self.save_settings();
     }
+}
+
+/// Renders Markdown as a read-only document. The preview intentionally uses the
+/// current content font and zoom so it feels like a locked version of the editor.
+fn render_markdown_preview(
+    ui: &mut egui::Ui,
+    markdown: &str,
+    zoom: f32,
+    font_family: &egui::FontFamily,
+    text_color: egui::Color32,
+) {
+    let mut job = egui::text::LayoutJob::default();
+    let mut heading = None;
+    let mut strong = false;
+    let mut code_block = false;
+    let mut list_depth = 0usize;
+    let mut at_item_start = false;
+
+    macro_rules! append {
+        ($text:expr) => {{
+            let size = match heading {
+                Some(pulldown_cmark::HeadingLevel::H1) => 28.0,
+                Some(pulldown_cmark::HeadingLevel::H2) => 23.0,
+                Some(pulldown_cmark::HeadingLevel::H3) => 19.0,
+                Some(_) => 17.0,
+                None => 16.0,
+            } * zoom;
+            let mut format = egui::text::TextFormat::simple(
+                egui::FontId::new(
+                    size,
+                    if code_block {
+                        egui::FontFamily::Monospace
+                    } else {
+                        font_family.clone()
+                    },
+                ),
+                text_color,
+            );
+            // The preview intentionally keeps the editor's normal colours;
+            // its hierarchy is expressed through text sizing alone.
+            if strong {
+                format.font_id.size *= 1.08;
+            }
+            job.append($text, 0.0, format);
+        }};
+    }
+
+    for event in Parser::new_ext(markdown, Options::all()) {
+        match event {
+            Event::Start(Tag::Heading { level, .. }) => heading = Some(level),
+            Event::End(TagEnd::Heading(_)) => {
+                heading = None;
+                append!("\n\n");
+            }
+            Event::Start(Tag::Paragraph) => {}
+            Event::End(TagEnd::Paragraph) => append!("\n\n"),
+            Event::Start(Tag::Strong) => strong = true,
+            Event::End(TagEnd::Strong) => strong = false,
+
+            Event::Start(Tag::CodeBlock(_)) => {
+                code_block = true;
+                append!("\n");
+            }
+            Event::End(TagEnd::CodeBlock) => {
+                code_block = false;
+                append!("\n\n");
+            }
+            Event::Start(Tag::List(_)) => list_depth += 1,
+            Event::End(TagEnd::List(_)) => {
+                list_depth = list_depth.saturating_sub(1);
+                append!("\n");
+            }
+            Event::Start(Tag::Item) => {
+                at_item_start = true;
+                append!("\n");
+            }
+            Event::End(TagEnd::Item) => at_item_start = false,
+            Event::Text(text) | Event::Code(text) | Event::Html(text) | Event::InlineHtml(text) => {
+                if at_item_start {
+                    append!(&"  ".repeat(list_depth.saturating_sub(1)));
+                    append!("• ");
+                    at_item_start = false;
+                }
+                append!(&text);
+            }
+            Event::SoftBreak | Event::HardBreak => append!("\n"),
+            Event::Rule => append!("\n──────────\n"),
+            _ => {}
+        }
+    }
+
+    if job.text.trim().is_empty() {
+        append!("Nothing to preview.");
+    }
+    job.wrap.max_width = ui.available_width();
+    ui.add(egui::Label::new(job).wrap());
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

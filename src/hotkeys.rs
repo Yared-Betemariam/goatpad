@@ -15,6 +15,7 @@ pub enum Action {
     FindInAllNotes,
     OpenTabsList,
     ToggleDocumentKind,
+    ToggleMarkdownPreview,
     NewTab,
     #[serde(alias = "DeleteTab")]
     CloseTab,
@@ -24,7 +25,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::ToggleBold,
         Self::ToggleItalic,
         Self::ToggleUnderline,
@@ -37,6 +38,7 @@ impl Action {
         Self::FindInNote,
         Self::OpenTabsList,
         Self::ToggleDocumentKind,
+        Self::ToggleMarkdownPreview,
         Self::NewTab,
         Self::CloseTab,
         Self::NextTab,
@@ -57,6 +59,7 @@ impl Action {
             Self::FindInAllNotes => "Find in all notes",
             Self::OpenTabsList => "Tabs list",
             Self::ToggleDocumentKind => "Toggle MD/TXT",
+            Self::ToggleMarkdownPreview => "Toggle Markdown preview",
             Self::NewTab => "New tab",
             Self::CloseTab => "Close tab",
             Self::NextTab => "Next tab",
@@ -210,6 +213,16 @@ pub fn default_bindings() -> HashMap<Action, Keybinding> {
             Action::ToggleDocumentKind,
             Keybinding::new(Key::M, Modifiers::CTRL),
         ),
+        (
+            Action::ToggleMarkdownPreview,
+            Keybinding::new(
+                Key::P,
+                Modifiers {
+                    shift: true,
+                    ..Modifiers::NONE
+                },
+            ),
+        ),
         (Action::NewTab, Keybinding::new(Key::T, Modifiers::CTRL)),
         (Action::CloseTab, Keybinding::new(Key::W, Modifiers::CTRL)),
         (Action::NextTab, Keybinding::new(Key::Tab, Modifiers::CTRL)),
@@ -334,6 +347,10 @@ mod tests {
         assert!(find_all_position < find_note_position);
         assert_eq!(bindings[&Action::OpenTabsList].to_string(), "Ctrl+P");
         assert_eq!(bindings[&Action::ToggleDocumentKind].to_string(), "Ctrl+M");
+        assert_eq!(
+            bindings[&Action::ToggleMarkdownPreview].to_string(),
+            "Shift+P"
+        );
         assert_eq!(bindings[&Action::CloseTab].to_string(), "Ctrl+W");
         assert_eq!(bindings[&Action::OpenSettings].to_string(), "Ctrl+,");
     }
