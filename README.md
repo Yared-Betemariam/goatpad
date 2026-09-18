@@ -134,8 +134,9 @@ The `version` must be newer than the installed version. The MSI URL and manifest
 | Tabs list                 | `Ctrl+P`                        |
 | MD/TXT switcher           | `Ctrl+M`                        |
 | Markdown preview          | `Shift+P`                       |
+| Close open panels         | `Escape`                        |
 
-Formatting shortcuts only apply to Markdown notes. Find results can be traversed with `Enter` and `Shift+Enter`, and the find panel can be closed with `Escape`. Shortcuts can be changed from the Keyboard tab in application settings.
+Formatting shortcuts only apply to Markdown notes. Find results can be traversed with `Enter` and `Shift+Enter`. `Escape` closes open panels and popups, including the find bar, Tabs List, Settings, confirmation dialogs, rename and shortcut-rebinding states. Shortcuts can be changed from the Keyboard tab in application settings.
 
 When the Tabs List is open, the first visible note is selected automatically. Typing a search selects its first result; use `Up` and `Down` to move between results and `Enter` to open the selected note.
 

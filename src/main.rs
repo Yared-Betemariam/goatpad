@@ -417,6 +417,43 @@ impl GoatpadApp {
         }
     }
 
+    /// Closes every transient panel and popup when Escape is pressed.
+    ///
+    /// Keep this handling in one place so panels added later do not need to
+    /// implement their own, potentially conflicting, Escape behavior.
+    fn close_escape_targets(&mut self, ctx: &egui::Context) -> bool {
+        let has_open_target = self.find.is_some()
+            || self.tabs_list_open
+            || self.settings_open
+            || self.delete_confirmation.is_some()
+            || self.theme_delete_confirm.is_some()
+            || self.rebinding.is_some()
+            || self.renaming_document.is_some()
+            || self.spellcheck_menu.is_some()
+            || egui::Popup::is_any_open(ctx);
+        if !has_open_target
+            || !ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
+            return false;
+        }
+
+        egui::Popup::close_all(ctx);
+
+        if self.find.is_some() {
+            self.close_find(ctx);
+        }
+        self.set_tabs_list_open(false);
+        self.settings_open = false;
+        self.delete_confirmation = None;
+        self.theme_delete_confirm = None;
+        self.rebinding = None;
+        self.spellcheck_menu = None;
+        if self.renaming_document.is_some() {
+            self.cancel_rename();
+        }
+        true
+    }
+
     fn render_find_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let matches = self.current_find_matches();
         let match_count = matches.len();
@@ -1298,6 +1335,9 @@ impl GoatpadApp {
     }
 
     fn dispatch_hotkeys(&mut self, ctx: &egui::Context) {
+        if self.close_escape_targets(ctx) {
+            return;
+        }
         if let Some(action) = self.rebinding {
             if let Some(binding) =
                 ctx.input(|input| input.events.iter().find_map(hotkeys::keybinding_from_event))
@@ -1311,12 +1351,6 @@ impl GoatpadApp {
             return;
         }
         if self.find.is_some() {
-            let close =
-                ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
-            if close {
-                self.close_find(ctx);
-                return;
-            }
             let previous = ctx.input_mut(|input| {
                 input.consume_key(
                     egui::Modifiers {
@@ -1875,7 +1909,6 @@ impl eframe::App for GoatpadApp {
         let mut requested_rename = None;
         let mut requested_new_tab = false;
         let mut finish_tab_rename = false;
-        let mut cancel_tab_rename = false;
         let active_is_markdown = self
             .session
             .active_tab
@@ -1966,16 +1999,7 @@ impl eframe::App for GoatpadApp {
                                                         egui::Key::Enter,
                                                     )
                                                 });
-                                            let escape = response.has_focus()
-                                                && ui.input_mut(|input| {
-                                                    input.consume_key(
-                                                        egui::Modifiers::NONE,
-                                                        egui::Key::Escape,
-                                                    )
-                                                });
-                                            if escape {
-                                                cancel_tab_rename = true;
-                                            } else if enter || response.lost_focus() {
+                                            if enter || response.lost_focus() {
                                                 finish_tab_rename = true;
                                             }
                                         } else {
@@ -2158,9 +2182,7 @@ impl eframe::App for GoatpadApp {
         if requested_new_tab {
             self.create_tab();
         }
-        if cancel_tab_rename {
-            self.cancel_rename();
-        } else if finish_tab_rename {
+        if finish_tab_rename {
             self.finish_rename();
         }
 
@@ -3237,8 +3259,6 @@ impl eframe::App for GoatpadApp {
                 .document(id)
                 .map_or("Untitled", |document| document.title.as_str())
                 .to_owned();
-            let cancel_with_keyboard =
-                ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
             egui::Window::new("Delete note?")
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .collapsible(false)
@@ -3252,7 +3272,7 @@ impl eframe::App for GoatpadApp {
                             self.delete_confirmation = None;
                             self.delete_note(id);
                         }
-                        if cancel_with_keyboard || ui.button("Cancel").clicked() {
+                        if ui.button("Cancel").clicked() {
                             self.delete_confirmation = None;
                         }
                     });
@@ -3295,8 +3315,6 @@ impl eframe::App for GoatpadApp {
         }
 
         if let Some(to_delete) = self.theme_delete_confirm.clone() {
-            let cancel_with_keyboard =
-                ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
             egui::Window::new("Delete theme?")
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .collapsible(false)
@@ -3308,7 +3326,7 @@ impl eframe::App for GoatpadApp {
                             self.theme_delete_confirm = None;
                             self.delete_custom_theme(&ctx, &to_delete);
                         }
-                        if cancel_with_keyboard || ui.button("Cancel").clicked() {
+                        if ui.button("Cancel").clicked() {
                             self.theme_delete_confirm = None;
                         }
                     });
