@@ -13,6 +13,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 - Markdown and plain-text editing in persistent tabs, with new notes defaulting to plain text (`TXT`) and switchable per note (`MD`/`TXT`)
 - A unified action bar combining File/Edit/View menus, contextual Markdown formatting tools (headings, lists, bold, italic, strikethrough, link, table, clear formatting), and the note type switcher
 - A searchable Tabs List for reopening closed notes and explicitly deleting unwanted notes; opening it focuses the search field automatically
+- Inline find for the active note (`Ctrl+F`) or the entire local note collection (`Ctrl+Shift+F`), with yellow match highlighting and keyboard result navigation
 - The title-bar tabs strip automatically scrolls to keep the active tab visible whenever it changes, even when many tabs overflow the visible area
 - Automatic note titles derived from the first line (up to 20 characters), with custom titles via double-click on a tab (renamed in place)
 - Import and export of all notes through portable JSON backups
@@ -128,10 +129,12 @@ The `version` must be newer than the installed version. The MSI URL and manifest
 | Strikethrough             | `Ctrl+Shift+X`                  |
 | Bulleted / Numbered list  | `Ctrl+Shift+8` / `Ctrl+Shift+7` |
 | Insert link               | `Ctrl+K`                        |
+| Find in active note       | `Ctrl+F`                        |
+| Find in all notes         | `Ctrl+Shift+F`                  |
 | Tabs list                 | `Ctrl+P`                        |
 | MD/TXT switcher           | `Ctrl+M`                        |
 
-Formatting shortcuts only apply to Markdown notes. Shortcuts can be changed from the Keyboard tab in application settings.
+Formatting shortcuts only apply to Markdown notes. Find results can be traversed with `Enter` and `Shift+Enter`, and the find panel can be closed with `Escape`. Shortcuts can be changed from the Keyboard tab in application settings.
 
 While editing a note, `Tab` inserts an indentation tab; `Ctrl+Tab` and `Ctrl+Shift+Tab` continue to switch between tabs.
 

@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 mod config;
 mod document;
+mod find;
 mod formatting;
 mod highlighting;
 mod hotkeys;
@@ -38,6 +39,7 @@ const TITLE_BAR_HEIGHT: f32 = 42.0;
 const TITLE_CONTENT_HEIGHT: f32 = 30.0;
 const TITLE_TAB_HEIGHT: f32 = TITLE_BAR_HEIGHT - 8.0;
 const ACTION_BAR_HEIGHT: f32 = 36.0;
+const FIND_BAR_HEIGHT: f32 = 38.0;
 const TITLE_BAR_SPACING: f32 = 6.0;
 const TITLE_CONTROL_WIDTH: f32 = 32.0;
 const WINDOW_BUTTON_WIDTH: f32 = 46.0;
@@ -92,6 +94,25 @@ struct Toast {
     kind: ToastKind,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FindScope {
+    ActiveNote,
+    AllNotes,
+}
+
+#[derive(Clone)]
+struct FindMatch {
+    document_id: Uuid,
+    range: Range<usize>,
+}
+
+struct FindState {
+    scope: FindScope,
+    query: String,
+    focus_input: bool,
+    current: Option<usize>,
+}
+
 struct GoatpadApp {
     app_icon_texture: egui::TextureHandle,
     workspace: Workspace,
@@ -100,6 +121,7 @@ struct GoatpadApp {
     cursor_offset: usize,
     scroll_offset: f32,
     restore_cursor: bool,
+    pending_find_scroll: Option<(Uuid, usize)>,
     writer: Sender<SaveRequest>,
     writer_results: Receiver<SaveResult>,
     last_edit: Option<Instant>,
@@ -109,6 +131,7 @@ struct GoatpadApp {
     tabs_list_open: bool,
     tabs_list_search: String,
     focus_tabs_list_search: bool,
+    find: Option<FindState>,
     settings: Settings,
     settings_open: bool,
     settings_tab: SettingsTab,
@@ -201,6 +224,7 @@ impl GoatpadApp {
             cursor_offset: state.cursor_offset,
             scroll_offset: state.scroll_offset,
             restore_cursor: true,
+            pending_find_scroll: None,
             writer,
             writer_results,
             last_edit: None,
@@ -210,6 +234,7 @@ impl GoatpadApp {
             tabs_list_open: false,
             tabs_list_search: String::new(),
             focus_tabs_list_search: false,
+            find: None,
             settings,
             settings_open: false,
             settings_tab: SettingsTab::default(),
@@ -270,6 +295,199 @@ impl GoatpadApp {
 
     fn toggle_tabs_list(&mut self) {
         self.set_tabs_list_open(!self.tabs_list_open);
+    }
+
+    fn open_find(&mut self, scope: FindScope) {
+        match self.find.as_mut() {
+            Some(find) => {
+                find.scope = scope;
+                find.focus_input = true;
+                find.current = None;
+            }
+            None => {
+                self.find = Some(FindState {
+                    scope,
+                    query: String::new(),
+                    focus_input: true,
+                    current: None,
+                });
+            }
+        }
+    }
+
+    fn current_find_matches(&self) -> Vec<FindMatch> {
+        let Some(find) = self.find.as_ref() else {
+            return Vec::new();
+        };
+        if find.query.is_empty() {
+            return Vec::new();
+        }
+
+        match find.scope {
+            FindScope::ActiveNote => self
+                .session
+                .active_tab
+                .and_then(|id| self.workspace.document(id))
+                .into_iter()
+                .flat_map(|document| {
+                    find::find_ranges(&document.content, &find.query)
+                        .into_iter()
+                        .map(move |range| FindMatch {
+                            document_id: document.id,
+                            range,
+                        })
+                })
+                .collect(),
+            FindScope::AllNotes => self
+                .workspace
+                .documents
+                .iter()
+                .flat_map(|document| {
+                    find::find_ranges(&document.content, &find.query)
+                        .into_iter()
+                        .map(move |range| FindMatch {
+                            document_id: document.id,
+                            range,
+                        })
+                })
+                .collect(),
+        }
+    }
+
+    fn visible_find_ranges(&self, document_id: Uuid) -> Vec<Range<usize>> {
+        self.current_find_matches()
+            .into_iter()
+            .filter(|matched| matched.document_id == document_id)
+            .map(|matched| matched.range)
+            .collect()
+    }
+
+    fn navigate_find(&mut self, ctx: &egui::Context, forward: bool) {
+        let matches = self.current_find_matches();
+        if matches.is_empty() {
+            if let Some(find) = self.find.as_mut() {
+                find.current = None;
+            }
+            return;
+        }
+
+        let current = self.find.as_ref().and_then(|find| find.current);
+        let next = match (current, forward) {
+            (Some(index), true) => (index + 1) % matches.len(),
+            (Some(0), false) | (None, false) => matches.len() - 1,
+            (Some(index), false) => index - 1,
+            (None, true) => 0,
+        };
+        let matched = matches[next].clone();
+        if let Some(find) = self.find.as_mut() {
+            find.current = Some(next);
+        }
+        if self.session.active_tab != Some(matched.document_id) {
+            self.activate_tab(matched.document_id);
+        }
+
+        let document = self.workspace.active_document();
+        let start = document.content[..matched.range.start].chars().count();
+        let end = start + document.content[matched.range].chars().count();
+        let editor_id = self.editor_id();
+        let mut state =
+            egui::widgets::text_edit::TextEditState::load(ctx, editor_id).unwrap_or_default();
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(start),
+                egui::text::CCursor::new(end),
+            )));
+        state.store(ctx, editor_id);
+        self.cursor_offset = end;
+        self.restore_cursor = false;
+        self.pending_find_scroll = Some((matched.document_id, start));
+        ctx.memory_mut(|memory| memory.request_focus(editor_id));
+    }
+
+    fn close_find(&mut self, ctx: &egui::Context) {
+        self.find = None;
+        if self.session.active_tab.is_some() {
+            let editor_id = self.editor_id();
+            ctx.memory_mut(|memory| memory.request_focus(editor_id));
+        }
+    }
+
+    fn render_find_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let matches = self.current_find_matches();
+        let match_count = matches.len();
+        let (scope, current) = self
+            .find
+            .as_ref()
+            .map(|find| (find.scope, find.current))
+            .expect("find bar requires find state");
+        let mut close = false;
+        let mut navigate = None;
+
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.set_height(FIND_BAR_HEIGHT);
+            close = ui
+                .add(
+                    egui::Button::new(egui_phosphor::regular::X)
+                        .frame_when_inactive(false)
+                        .min_size(egui::vec2(24.0, 24.0)),
+                )
+                .on_hover_text("Close find")
+                .clicked();
+            let (scope_icon, scope_tooltip) = match scope {
+                FindScope::ActiveNote => (egui_phosphor::regular::NOTE, "Finding in current note"),
+                FindScope::AllNotes => (egui_phosphor::regular::FILES, "Finding in all notes"),
+            };
+            ui.label(egui::RichText::new(scope_icon).size(18.0))
+                .on_hover_text(scope_tooltip);
+
+            let input_width = (ui.available_width() - 180.0).max(80.0);
+            let find = self.find.as_mut().expect("find bar requires find state");
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut find.query)
+                    .desired_width(input_width)
+                    .hint_text("Find…"),
+            );
+            if find.focus_input {
+                response.request_focus();
+                find.focus_input = false;
+            }
+            if response.changed() {
+                find.current = None;
+            }
+
+            let position = current
+                .filter(|index| *index < match_count)
+                .map_or(0, |index| index + 1);
+            ui.label(format!("{position} of {match_count}"));
+            if ui
+                .add_enabled(
+                    match_count > 0,
+                    egui::Button::new(egui_phosphor::regular::ARROW_UP).frame_when_inactive(false),
+                )
+                .on_hover_text("Previous match (Shift+Enter)")
+                .clicked()
+            {
+                navigate = Some(false);
+            }
+            if ui
+                .add_enabled(
+                    match_count > 0,
+                    egui::Button::new(egui_phosphor::regular::ARROW_DOWN)
+                        .frame_when_inactive(false),
+                )
+                .on_hover_text("Next match (Enter)")
+                .clicked()
+            {
+                navigate = Some(true);
+            }
+        });
+
+        if close {
+            self.close_find(ctx);
+        } else if let Some(forward) = navigate {
+            self.navigate_find(ctx, forward);
+        }
     }
 
     fn toggle_active_document_kind(&mut self) {
@@ -1074,6 +1292,33 @@ impl GoatpadApp {
             }
             return;
         }
+        if self.find.is_some() {
+            let close =
+                ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+            if close {
+                self.close_find(ctx);
+                return;
+            }
+            let previous = ctx.input_mut(|input| {
+                input.consume_key(
+                    egui::Modifiers {
+                        shift: true,
+                        ..egui::Modifiers::NONE
+                    },
+                    egui::Key::Enter,
+                )
+            });
+            if previous {
+                self.navigate_find(ctx, false);
+                return;
+            }
+            let next =
+                ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+            if next {
+                self.navigate_find(ctx, true);
+                return;
+            }
+        }
         let action = Action::ALL.into_iter().find(|action| {
             self.settings
                 .keybindings
@@ -1106,6 +1351,8 @@ impl GoatpadApp {
                     self.activate_tab(id);
                 }
             }
+            Action::FindInNote => self.open_find(FindScope::ActiveNote),
+            Action::FindInAllNotes => self.open_find(FindScope::AllNotes),
             Action::OpenTabsList => self.toggle_tabs_list(),
             Action::ToggleDocumentKind => self.toggle_active_document_kind(),
             Action::OpenSettings => self.settings_open = !self.settings_open,
@@ -1975,6 +2222,19 @@ impl eframe::App for GoatpadApp {
                         }
                     });
                     ui.menu_button("Edit", |ui| {
+                        if ui.button("Find in note").on_hover_text("Ctrl+F").clicked() {
+                            self.open_find(FindScope::ActiveNote);
+                            ui.close();
+                        }
+                        if ui
+                            .button("Find in all notes")
+                            .on_hover_text("Ctrl+Shift+F")
+                            .clicked()
+                        {
+                            self.open_find(FindScope::AllNotes);
+                            ui.close();
+                        }
+                        ui.separator();
                         let enabled = active_is_markdown;
                         if ui
                             .add_enabled(enabled, egui::Button::new("Bold"))
@@ -2449,6 +2709,23 @@ impl eframe::App for GoatpadApp {
                 });
             });
 
+        if self.find.is_some() {
+            let find_response = egui::Panel::top("find_bar")
+                .exact_size(FIND_BAR_HEIGHT)
+                .frame(
+                    egui::Frame::new()
+                        .fill(ui.style().visuals.panel_fill)
+                        .stroke(egui::Stroke::NONE)
+                        .inner_margin(egui::Margin::symmetric(10, 0)),
+                )
+                .show(ui, |ui| self.render_find_bar(ui, &ctx));
+            ui.painter().hline(
+                find_response.response.rect.left()..=find_response.response.rect.right(),
+                find_response.response.rect.top(),
+                egui::Stroke::new(1.75, self.theme_draft.border_color()),
+            );
+        }
+
         let mut requested_list_open = None;
         let mut requested_list_delete = None;
         if self.tabs_list_open {
@@ -2685,7 +2962,9 @@ impl eframe::App for GoatpadApp {
                 };
                 let editor_id = self.editor_id();
                 let misspelled_ranges = self.spellcheck_ranges(document_id);
+                let find_ranges = self.visible_find_ranges(document_id);
                 let layouter_misspelled = misspelled_ranges.clone();
+                let layouter_find_ranges = find_ranges.clone();
                 let mut layouter =
                     move |ui: &egui::Ui, buffer: &dyn egui::TextBuffer, wrap_width: f32| {
                         let mut job = if is_markdown {
@@ -2695,6 +2974,7 @@ impl eframe::App for GoatpadApp {
                                 &font_family,
                                 text_color,
                                 &layouter_misspelled,
+                                &layouter_find_ranges,
                             )
                         } else {
                             highlighting::plain(
@@ -2703,11 +2983,17 @@ impl eframe::App for GoatpadApp {
                                 &font_family,
                                 text_color,
                                 &layouter_misspelled,
+                                &layouter_find_ranges,
                             )
                         };
                         job.wrap.max_width = wrap_width;
                         ui.fonts_mut(|fonts| fonts.layout_job(job))
                     };
+                let scroll_to_find = self
+                    .pending_find_scroll
+                    .take()
+                    .filter(|(target_id, _)| *target_id == document_id)
+                    .map(|(_, char_index)| char_index);
                 let output = egui::ScrollArea::vertical()
                     .id_salt(("editor-scroll", document_id))
                     .content_margin(egui::Margin {
@@ -2720,14 +3006,25 @@ impl eframe::App for GoatpadApp {
                     .show(ui, |ui| {
                         let available_height = ui.available_height();
                         let line_height = 20.0 * zoom;
-                        egui::TextEdit::multiline(&mut self.workspace.active_document_mut().content)
-                            .id(editor_id)
-                            .desired_width(ui.available_width())
-                            .desired_rows((available_height / line_height).ceil().max(1.0) as usize)
-                            .lock_focus(true)
-                            .frame(egui::Frame::NONE)
-                            .layouter(&mut layouter)
-                            .show(ui)
+                        let editor = egui::TextEdit::multiline(
+                            &mut self.workspace.active_document_mut().content,
+                        )
+                        .id(editor_id)
+                        .desired_width(ui.available_width())
+                        .desired_rows((available_height / line_height).ceil().max(1.0) as usize)
+                        .lock_focus(true)
+                        .frame(egui::Frame::NONE)
+                        .layouter(&mut layouter)
+                        .show(ui);
+                        if let Some(char_index) = scroll_to_find {
+                            let match_rect = editor
+                                .galley
+                                .pos_from_cursor(egui::text::CCursor::new(char_index))
+                                .translate(editor.galley_pos.to_vec2())
+                                .expand(8.0);
+                            ui.scroll_to_rect(match_rect, Some(egui::Align::Center));
+                        }
+                        editor
                     });
                 self.scroll_offset = output.state.offset.y;
                 let editor = output.inner;

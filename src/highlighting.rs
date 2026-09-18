@@ -57,6 +57,7 @@ fn default_format(zoom: f32, font_family: &FontFamily, text_color: Color32) -> T
 
 /// The color used to underline misspelled words, matching Notepad's spell-check styling.
 pub const MISSPELLED_UNDERLINE_COLOR: Color32 = Color32::from_rgb(224, 49, 49);
+pub const FIND_HIGHLIGHT_COLOR: Color32 = Color32::from_rgb(255, 221, 64);
 
 /// Marks `format` as misspelled by drawing a red underline, preserving every
 /// other attribute (color, weight, background, …) it already carries.
@@ -65,15 +66,23 @@ fn mark_misspelled(mut format: TextFormat, zoom: f32) -> TextFormat {
     format
 }
 
+fn mark_find_match(mut format: TextFormat) -> TextFormat {
+    format.background = FIND_HIGHLIGHT_COLOR;
+    format.color = Color32::BLACK;
+    format
+}
+
 /// Produces a live Markdown layout while preserving the editor's original text.
 /// `zoom` scales every font size uniformly, mirroring Notepad's zoom control.
 /// `misspelled` lists the UTF-8 byte ranges that should be underlined in red.
+/// `find_matches` lists ranges that should receive a yellow background.
 pub fn highlight(
     text: &str,
     zoom: f32,
     font_family: &FontFamily,
     text_color: Color32,
     misspelled: &[Range<usize>],
+    find_matches: &[Range<usize>],
 ) -> LayoutJob {
     let mut spans = Vec::<(Range<usize>, Style)>::new();
     let mut active = Vec::<Style>::new();
@@ -104,7 +113,15 @@ pub fn highlight(
         }
     }
 
-    layout_with_spans(text, spans, zoom, font_family, text_color, misspelled)
+    layout_with_spans(
+        text,
+        spans,
+        zoom,
+        font_family,
+        text_color,
+        misspelled,
+        find_matches,
+    )
 }
 
 /// Produces a plain-text layout, underlining misspelled words (given as
@@ -115,43 +132,17 @@ pub fn plain(
     font_family: &FontFamily,
     text_color: Color32,
     misspelled: &[Range<usize>],
+    find_matches: &[Range<usize>],
 ) -> LayoutJob {
-    let format = default_format(zoom, font_family, text_color);
-    if misspelled.is_empty() {
-        return LayoutJob::simple(text.to_owned(), format.font_id, format.color, f32::INFINITY);
-    }
-
-    let flags = misspelled_flags(text.len(), misspelled);
-    let mut job = LayoutJob::default();
-    let mut start = 0;
-    let mut current = flags.first().copied().unwrap_or(false);
-    for (index, _) in text.char_indices().skip(1) {
-        if flags[index] != current {
-            job.append(
-                &text[start..index],
-                0.0,
-                if current {
-                    mark_misspelled(format.clone(), zoom)
-                } else {
-                    format.clone()
-                },
-            );
-            start = index;
-            current = flags[index];
-        }
-    }
-    if !text.is_empty() {
-        job.append(
-            &text[start..],
-            0.0,
-            if current {
-                mark_misspelled(format.clone(), zoom)
-            } else {
-                format
-            },
-        );
-    }
-    job
+    layout_with_spans(
+        text,
+        Vec::new(),
+        zoom,
+        font_family,
+        text_color,
+        misspelled,
+        find_matches,
+    )
 }
 
 fn style_for_tag(tag: &Tag<'_>) -> Option<Style> {
@@ -183,6 +174,7 @@ fn layout_with_spans(
     font_family: &FontFamily,
     text_color: Color32,
     misspelled: &[Range<usize>],
+    find_matches: &[Range<usize>],
 ) -> LayoutJob {
     let mut styles = vec![None; text.len()];
     for (range, style) in spans {
@@ -196,15 +188,21 @@ fn layout_with_spans(
             }
         }
     }
-    let flags = misspelled_flags(text.len(), misspelled);
+    let misspelled_flags = range_flags(text.len(), misspelled);
+    let find_flags = range_flags(text.len(), find_matches);
 
-    let format_at = |style: Option<Style>, is_misspelled: bool| {
+    let format_at = |style: Option<Style>, is_misspelled: bool, is_find_match: bool| {
         let format = style.map_or_else(
             || default_format(zoom, font_family, text_color),
             |style| style.format(zoom, font_family, text_color),
         );
-        if is_misspelled {
+        let format = if is_misspelled {
             mark_misspelled(format, zoom)
+        } else {
+            format
+        };
+        if is_find_match {
+            mark_find_match(format)
         } else {
             format
         }
@@ -213,27 +211,36 @@ fn layout_with_spans(
     let mut start = 0;
     let mut current = (
         styles.first().copied().flatten(),
-        flags.first().copied().unwrap_or(false),
+        misspelled_flags.first().copied().unwrap_or(false),
+        find_flags.first().copied().unwrap_or(false),
     );
     for (index, _) in text.char_indices().skip(1) {
-        let key = (styles[index], flags[index]);
+        let key = (styles[index], misspelled_flags[index], find_flags[index]);
         if key != current {
-            job.append(&text[start..index], 0.0, format_at(current.0, current.1));
+            job.append(
+                &text[start..index],
+                0.0,
+                format_at(current.0, current.1, current.2),
+            );
             start = index;
             current = key;
         }
     }
     if !text.is_empty() {
-        job.append(&text[start..], 0.0, format_at(current.0, current.1));
+        job.append(
+            &text[start..],
+            0.0,
+            format_at(current.0, current.1, current.2),
+        );
     }
     job
 }
 
 /// Builds a per-byte boolean mask marking which positions in a `len`-byte
 /// text fall inside one of the given misspelled-word ranges.
-fn misspelled_flags(len: usize, misspelled: &[Range<usize>]) -> Vec<bool> {
+fn range_flags(len: usize, ranges: &[Range<usize>]) -> Vec<bool> {
     let mut flags = vec![false; len];
-    for range in misspelled {
+    for range in ranges {
         for flag in flags
             .iter_mut()
             .take(range.end.min(len))
@@ -258,6 +265,7 @@ mod tests {
             &FontFamily::Proportional,
             Color32::DARK_GRAY,
             &[],
+            &[],
         );
         assert_eq!(
             job.text,
@@ -278,6 +286,7 @@ mod tests {
             &FontFamily::Proportional,
             Color32::DARK_GRAY,
             &[],
+            &[],
         );
 
         assert_eq!(job.sections[0].format.color, Color32::DARK_GRAY);
@@ -293,6 +302,7 @@ mod tests {
             &FontFamily::Proportional,
             Color32::DARK_GRAY,
             &[word_range.clone()],
+            &[],
         );
 
         for section in &job.sections {
@@ -316,6 +326,7 @@ mod tests {
             &FontFamily::Proportional,
             Color32::DARK_GRAY,
             &[2..12],
+            &[],
         );
 
         let misspelled_section = job
@@ -332,12 +343,32 @@ mod tests {
     }
 
     #[test]
+    fn find_matches_receive_a_yellow_background() {
+        let job = plain(
+            "find this text",
+            1.0,
+            &FontFamily::Proportional,
+            Color32::DARK_GRAY,
+            &[],
+            &[5..9],
+        );
+        let matched = job
+            .sections
+            .iter()
+            .find(|section| section.byte_range.start.0 == 5)
+            .expect("find match should have its own section");
+        assert_eq!(matched.format.background, super::FIND_HIGHLIGHT_COLOR);
+        assert_eq!(matched.format.color, Color32::BLACK);
+    }
+
+    #[test]
     fn markdown_constructs_receive_distinct_formats() {
         let job = highlight(
             "# Heading\n*italic* **bold** `code` [link](https://example.com)\n- item",
             1.0,
             &FontFamily::Proportional,
             Color32::DARK_GRAY,
+            &[],
             &[],
         );
         let formats = job

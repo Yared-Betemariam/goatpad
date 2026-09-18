@@ -11,6 +11,8 @@ pub enum Action {
     ToggleBulletList,
     ToggleNumberedList,
     InsertLink,
+    FindInNote,
+    FindInAllNotes,
     OpenTabsList,
     ToggleDocumentKind,
     NewTab,
@@ -22,7 +24,7 @@ pub enum Action {
 }
 
 impl Action {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 16] = [
         Self::ToggleBold,
         Self::ToggleItalic,
         Self::ToggleUnderline,
@@ -30,6 +32,9 @@ impl Action {
         Self::ToggleBulletList,
         Self::ToggleNumberedList,
         Self::InsertLink,
+        // More-specific modified shortcuts must be checked before their base shortcut.
+        Self::FindInAllNotes,
+        Self::FindInNote,
         Self::OpenTabsList,
         Self::ToggleDocumentKind,
         Self::NewTab,
@@ -48,6 +53,8 @@ impl Action {
             Self::ToggleBulletList => "Bullet list",
             Self::ToggleNumberedList => "Numbered list",
             Self::InsertLink => "Insert link",
+            Self::FindInNote => "Find in active note",
+            Self::FindInAllNotes => "Find in all notes",
             Self::OpenTabsList => "Tabs list",
             Self::ToggleDocumentKind => "Toggle MD/TXT",
             Self::NewTab => "New tab",
@@ -183,6 +190,18 @@ pub fn default_bindings() -> HashMap<Action, Keybinding> {
             ),
         ),
         (Action::InsertLink, Keybinding::new(Key::K, Modifiers::CTRL)),
+        (Action::FindInNote, Keybinding::new(Key::F, Modifiers::CTRL)),
+        (
+            Action::FindInAllNotes,
+            Keybinding::new(
+                Key::F,
+                Modifiers {
+                    ctrl: true,
+                    shift: true,
+                    ..Modifiers::NONE
+                },
+            ),
+        ),
         (
             Action::OpenTabsList,
             Keybinding::new(Key::P, Modifiers::CTRL),
@@ -299,6 +318,20 @@ mod tests {
         let bindings = default_bindings();
         assert_eq!(bindings[&Action::NextTab].to_string(), "Ctrl+Tab");
         assert_eq!(bindings[&Action::PreviousTab].to_string(), "Ctrl+Shift+Tab");
+        assert_eq!(bindings[&Action::FindInNote].to_string(), "Ctrl+F");
+        assert_eq!(
+            bindings[&Action::FindInAllNotes].to_string(),
+            "Ctrl+Shift+F"
+        );
+        let find_note_position = Action::ALL
+            .iter()
+            .position(|action| *action == Action::FindInNote)
+            .unwrap();
+        let find_all_position = Action::ALL
+            .iter()
+            .position(|action| *action == Action::FindInAllNotes)
+            .unwrap();
+        assert!(find_all_position < find_note_position);
         assert_eq!(bindings[&Action::OpenTabsList].to_string(), "Ctrl+P");
         assert_eq!(bindings[&Action::ToggleDocumentKind].to_string(), "Ctrl+M");
         assert_eq!(bindings[&Action::CloseTab].to_string(), "Ctrl+W");
