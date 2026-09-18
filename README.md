@@ -165,6 +165,8 @@ Each theme stores two independent font settings:
 
 Goatpad includes a catalog of 50 font choices, including Segoe UI, Georgia, Cambria, Times New Roman, Arial, Consolas, Calibri, Cascadia Code, Fira Code, Inter, JetBrains Mono, Lato, Open Sans, Raleway, Roboto, Roboto Mono, Source Code Pro, Ubuntu, and more, plus the built-in Sans and Monospace options. On Windows, Goatpad checks both machine-wide and per-user font registrations when it starts and adds only catalog fonts whose files are actually installed. This means fonts such as Inter or JetBrains Mono appear automatically after they are installed, without bundling or scanning every font on the computer. When a family has separate registered faces, Goatpad prefers its regular/normal/variable face, then medium, and does not use bold, semibold, italic, or oblique faces as the default.
 
+Amharic and other Ethiopic-script text is supported independently of the selected content font. Goatpad prefers Windows' lighter Ebrima regular face when it is available, and bundles Abyssinica SIL as a final fallback for other systems. Both are registered in every editor font family, so selecting a font without Ethiopic glyphs no longer produces square replacement boxes. Abyssinica SIL is distributed under the SIL Open Font License; see `assets/AbyssinicaSIL-LICENSE.txt`.
+
 ## Note titles
 
 New notes are named `Untitled` until you type on the first line. Goatpad then uses up to the first 20 characters of that line as the note title. Double-click a tab to rename it in place; press `Enter` to confirm or `Escape` to cancel. Clear the custom title to return to automatic naming.

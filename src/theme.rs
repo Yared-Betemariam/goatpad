@@ -75,6 +75,17 @@ pub const FONT_OPTIONS: &[&str] = &[
 
 const GENERIC_FONT_OPTIONS: &[&str] = &["Sans", "Monospace"];
 
+// This font is bundled so Ethiopic text does not depend on the user's selected
+// content font or on an optional Windows font installation.
+const AMHARIC_FONT_NAME: &str = "goatpad-amharic";
+const AMHARIC_FONT_DATA: &[u8] = include_bytes!("../assets/AbyssinicaSIL-Regular.ttf");
+
+#[cfg(target_os = "windows")]
+const WINDOWS_AMHARIC_FONT_NAME: &str = "goatpad-amharic-windows";
+
+#[cfg(target_os = "windows")]
+const WINDOWS_AMHARIC_FONT_FILE: &str = "ebrima.ttf";
+
 #[cfg(target_os = "windows")]
 const WINDOWS_FONT_REGISTRY_PATH: &str = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
 
@@ -341,6 +352,8 @@ fn shade_toward_contrast(background: Color32, amount: f32) -> Color32 {
 pub fn install_fonts(ctx: &egui::Context) -> Vec<String> {
     let mut fonts = FontDefinitions::default();
 
+    install_amharic_fallback(&mut fonts);
+
     fonts.font_data.insert(
         "phosphor".to_owned(),
         Arc::new(FontData::from_static(
@@ -377,6 +390,39 @@ pub fn install_fonts(ctx: &egui::Context) -> Vec<String> {
 
     ctx.set_fonts(fonts);
     available_fonts
+}
+
+fn install_amharic_fallback(fonts: &mut FontDefinitions) {
+    fonts.font_data.insert(
+        AMHARIC_FONT_NAME.to_owned(),
+        Arc::new(FontData::from_static(AMHARIC_FONT_DATA)),
+    );
+
+    let mut fallback_fonts = vec![AMHARIC_FONT_NAME.to_owned()];
+
+    // Ebrima's regular face is a little lighter than the bundled fallback and
+    // is included with Windows. Use it when available without redistributing
+    // Microsoft's font file with Goatpad.
+    #[cfg(target_os = "windows")]
+    if let Some(path) = resolve_font_path(WINDOWS_AMHARIC_FONT_FILE) {
+        if let Ok(data) = fs::read(path) {
+            fonts.font_data.insert(
+                WINDOWS_AMHARIC_FONT_NAME.to_owned(),
+                Arc::new(FontData::from_owned(data)),
+            );
+            fallback_fonts.insert(0, WINDOWS_AMHARIC_FONT_NAME.to_owned());
+        }
+    }
+
+    for family_name in [FontFamily::Proportional, FontFamily::Monospace] {
+        if let Some(family) = fonts.families.get_mut(&family_name) {
+            for fallback_font in &fallback_fonts {
+                if !family.iter().any(|font| font == fallback_font) {
+                    family.push(fallback_font.clone());
+                }
+            }
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -772,16 +818,33 @@ fn theme_path(paths: &AppPaths, name: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{
-        FONT_OPTIONS, Theme, ThemeColor, delete_theme, ensure_default_themes, load_themes,
-        save_theme,
+        AMHARIC_FONT_NAME, FONT_OPTIONS, Theme, ThemeColor, delete_theme, ensure_default_themes,
+        install_amharic_fallback, load_themes, save_theme,
     };
     use crate::paths::AppPaths;
+    use egui::{FontDefinitions, FontFamily};
     use std::path::PathBuf;
     use uuid::Uuid;
 
     #[test]
     fn font_catalog_has_at_least_twenty_choices() {
         assert!(FONT_OPTIONS.len() >= 20);
+    }
+
+    #[test]
+    fn amharic_font_is_added_to_builtin_fallback_chains() {
+        let mut fonts = FontDefinitions::default();
+        install_amharic_fallback(&mut fonts);
+
+        assert!(fonts.font_data.contains_key(AMHARIC_FONT_NAME));
+        for family_name in [FontFamily::Proportional, FontFamily::Monospace] {
+            assert!(
+                fonts
+                    .families
+                    .get(&family_name)
+                    .is_some_and(|family| family.iter().any(|font| font == AMHARIC_FONT_NAME))
+            );
+        }
     }
 
     #[cfg(target_os = "windows")]

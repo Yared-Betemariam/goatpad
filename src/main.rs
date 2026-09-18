@@ -2718,7 +2718,7 @@ impl eframe::App for GoatpadApp {
                                 .then(|| requested_kind = DocKind::Md);
 
                                 if current_kind == DocKind::Md {
-                                    ui.add_space(12.0);
+                                    ui.add_space(6.0);
                                 }
 
                                 if current_kind == DocKind::Md

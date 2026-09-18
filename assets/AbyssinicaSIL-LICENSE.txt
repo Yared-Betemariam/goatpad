@@ -1,0 +1,10 @@
+Abyssinica SIL Regular
+
+Copyright (c) 2007-2022, SIL International (https://www.sil.org/)
+
+This font is distributed under the SIL Open Font License, Version 1.1.
+The license text is available at:
+https://openfontlicense.org
+
+This font may be used, studied, modified and redistributed freely as long
+as the terms of the SIL Open Font License are followed.
