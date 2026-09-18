@@ -96,22 +96,29 @@ impl Keybinding {
 
 impl fmt::Display for Keybinding {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut parts = Vec::new();
-        if self.modifiers.ctrl {
-            parts.push("Ctrl");
-        }
-        if self.modifiers.shift {
-            parts.push("Shift");
-        }
-        if self.modifiers.alt {
-            parts.push("Alt");
-        }
-        if self.modifiers.mac_cmd || self.modifiers.command {
-            parts.push("Cmd");
-        }
+        let mut parts = modifier_labels(self.modifiers, cfg!(target_os = "macos"));
         parts.push(key_name(self.key));
         f.write_str(&parts.join("+"))
     }
+}
+
+fn modifier_labels(modifiers: Modifiers, is_mac: bool) -> Vec<&'static str> {
+    let mut parts = Vec::new();
+
+    if (is_mac && modifiers.ctrl) || (!is_mac && (modifiers.ctrl || modifiers.command)) {
+        parts.push("Ctrl");
+    }
+    if modifiers.shift {
+        parts.push("Shift");
+    }
+    if modifiers.alt {
+        parts.push("Alt");
+    }
+    if is_mac && (modifiers.mac_cmd || modifiers.command) {
+        parts.push("Cmd");
+    }
+
+    parts
 }
 
 impl FromStr for Keybinding {
@@ -304,13 +311,39 @@ fn parse_key(name: &str) -> Option<Key> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Action, Keybinding, default_bindings, keybinding_from_event};
+    use super::{Action, Keybinding, default_bindings, keybinding_from_event, modifier_labels};
     use egui::{Event, Key, Modifiers};
 
     #[test]
     fn keybinding_round_trips_through_its_settings_string() {
         let binding: Keybinding = "Ctrl+Shift+8".parse().unwrap();
         assert_eq!(binding.to_string(), "Ctrl+Shift+8");
+    }
+
+    #[test]
+    fn platform_primary_modifier_alias_is_displayed_once() {
+        let windows_modifiers = Modifiers {
+            ctrl: true,
+            command: true,
+            ..Modifiers::NONE
+        };
+        assert_eq!(modifier_labels(windows_modifiers, false), vec!["Ctrl"]);
+        assert_eq!(modifier_labels(Modifiers::COMMAND, true), vec!["Cmd"]);
+
+        let primary_modifiers = if cfg!(target_os = "macos") {
+            Modifiers::COMMAND
+        } else {
+            windows_modifiers
+        };
+        let expected = if cfg!(target_os = "macos") {
+            "Cmd+K"
+        } else {
+            "Ctrl+K"
+        };
+        assert_eq!(
+            Keybinding::new(Key::K, primary_modifiers).to_string(),
+            expected
+        );
     }
 
     #[test]
