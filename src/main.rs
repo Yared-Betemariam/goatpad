@@ -132,6 +132,7 @@ struct GoatpadApp {
     tabs_list_open: bool,
     tabs_list_search: String,
     focus_tabs_list_search: bool,
+    tabs_list_selected: Option<Uuid>,
     find: Option<FindState>,
     settings: Settings,
     settings_open: bool,
@@ -235,6 +236,7 @@ impl GoatpadApp {
             tabs_list_open: false,
             tabs_list_search: String::new(),
             focus_tabs_list_search: false,
+            tabs_list_selected: None,
             find: None,
             settings,
             settings_open: false,
@@ -292,6 +294,7 @@ impl GoatpadApp {
     fn set_tabs_list_open(&mut self, open: bool) {
         self.tabs_list_open = open;
         self.focus_tabs_list_search = open;
+        self.tabs_list_selected = None;
     }
 
     fn toggle_tabs_list(&mut self) {
@@ -2829,11 +2832,66 @@ impl eframe::App for GoatpadApp {
                     }
                     ui.separator();
                     let query = self.tabs_list_search.trim().to_lowercase();
+                    let visible_note_ids = notes
+                        .iter()
+                        .filter(|(_, title, _, _)| {
+                            query.is_empty() || title.to_lowercase().contains(&query)
+                        })
+                        .map(|(id, _, _, _)| *id)
+                        .collect::<Vec<_>>();
+
+                    if search_response.changed() {
+                        self.tabs_list_selected = visible_note_ids.first().copied();
+                    } else if self.tabs_list_selected.is_none()
+                        || !visible_note_ids.contains(&self.tabs_list_selected.unwrap())
+                    {
+                        self.tabs_list_selected = visible_note_ids.first().copied();
+                    }
+
+                    let mut selected_index = self.tabs_list_selected.and_then(|id| {
+                        visible_note_ids
+                            .iter()
+                            .position(|visible_id| *visible_id == id)
+                    });
+                    if !visible_note_ids.is_empty() {
+                        let moved_down = ui.input_mut(|input| {
+                            input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown)
+                        });
+                        let moved_up = if moved_down {
+                            false
+                        } else {
+                            ui.input_mut(|input| {
+                                input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp)
+                            })
+                        };
+                        if moved_down {
+                            selected_index = Some(
+                                selected_index
+                                    .map_or(0, |index| (index + 1) % visible_note_ids.len()),
+                            );
+                        } else if moved_up {
+                            selected_index =
+                                Some(selected_index.map_or(visible_note_ids.len() - 1, |index| {
+                                    if index == 0 {
+                                        visible_note_ids.len() - 1
+                                    } else {
+                                        index - 1
+                                    }
+                                }));
+                        }
+                    }
+                    self.tabs_list_selected = selected_index.map(|index| visible_note_ids[index]);
+                    if ui.input_mut(|input| {
+                        input.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
+                    }) {
+                        requested_list_open = self.tabs_list_selected;
+                    }
+
                     egui::ScrollArea::vertical()
                         .max_height(420.0)
                         .show(ui, |ui| {
                             for (id, title, _, is_open) in &notes {
-                                if !query.is_empty() && !title.to_lowercase().contains(&query) {
+                                if !visible_note_ids.contains(id) {
                                     continue;
                                 }
                                 ui.horizontal(|ui| {
@@ -2849,11 +2907,13 @@ impl eframe::App for GoatpadApp {
                                             "Not open"
                                         },
                                     );
+                                    let selected = self.tabs_list_selected == Some(*id);
                                     if ui
-                                        .selectable_label(false, title)
+                                        .selectable_label(selected, title)
                                         .on_hover_text("Open note")
                                         .clicked()
                                     {
+                                        self.tabs_list_selected = Some(*id);
                                         requested_list_open = Some(*id);
                                     }
                                     if ui
@@ -2865,14 +2925,19 @@ impl eframe::App for GoatpadApp {
                                     }
                                 });
                             }
-                            if notes.is_empty() {
-                                ui.label("No notes saved.");
+                            if visible_note_ids.is_empty() {
+                                ui.label(if notes.is_empty() {
+                                    "No notes saved."
+                                } else {
+                                    "No matching notes."
+                                });
                             }
                         });
                 });
             self.tabs_list_open = list_open;
             if !self.tabs_list_open {
                 self.focus_tabs_list_search = false;
+                self.tabs_list_selected = None;
             }
         }
         if let Some(id) = requested_list_open {
