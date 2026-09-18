@@ -1,4 +1,5 @@
 use crate::{paths::AppPaths, persistence::atomic_write};
+use egui::{Pos2, Rect, Vec2};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -8,10 +9,91 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct WindowGeom {
+    /// The inner content size in physical/native pixels.
     pub width: f32,
     pub height: f32,
+    /// The outer frame position in physical/native pixels.
     pub x: f32,
     pub y: f32,
+    /// Whether the window was maximized when the session was saved.
+    #[serde(default)]
+    pub maximized: bool,
+    /// Old sessions stored viewport points. New sessions store native pixels.
+    #[serde(default)]
+    pub physical_pixels: bool,
+}
+
+impl WindowGeom {
+    const POSITION_TOLERANCE_PX: f32 = 4.0;
+
+    pub fn from_viewport(
+        inner_rect: Rect,
+        outer_rect: Rect,
+        pixels_per_point: f32,
+        maximized: bool,
+    ) -> Option<Self> {
+        if !pixels_per_point.is_finite() || pixels_per_point <= 0.0 {
+            return None;
+        }
+
+        let geometry = Self {
+            width: inner_rect.width() * pixels_per_point,
+            height: inner_rect.height() * pixels_per_point,
+            x: outer_rect.left() * pixels_per_point,
+            y: outer_rect.top() * pixels_per_point,
+            maximized,
+            physical_pixels: true,
+        };
+        geometry.is_valid().then_some(geometry)
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.width.is_finite()
+            && self.height.is_finite()
+            && self.x.is_finite()
+            && self.y.is_finite()
+            && self.width > 0.0
+            && self.height > 0.0
+    }
+
+    /// Convert a legacy viewport-point record to the new native-pixel format.
+    /// The conversion is necessarily based on the current monitor because old
+    /// sessions did not record the monitor scale separately.
+    pub fn migrate_to_physical_pixels(&mut self, pixels_per_point: f32) {
+        if self.physical_pixels || !pixels_per_point.is_finite() || pixels_per_point <= 0.0 {
+            return;
+        }
+        self.width *= pixels_per_point;
+        self.height *= pixels_per_point;
+        self.x *= pixels_per_point;
+        self.y *= pixels_per_point;
+        self.physical_pixels = true;
+    }
+
+    pub fn viewport_values(&self, pixels_per_point: f32) -> Option<(Vec2, Pos2)> {
+        if !self.is_valid() || !pixels_per_point.is_finite() || pixels_per_point <= 0.0 {
+            return None;
+        }
+
+        let divisor = if self.physical_pixels {
+            pixels_per_point
+        } else {
+            1.0
+        };
+        Some((
+            Vec2::new(self.width / divisor, self.height / divisor),
+            Pos2::new(self.x / divisor, self.y / divisor),
+        ))
+    }
+
+    pub fn approximately_matches(&self, other: &Self) -> bool {
+        self.physical_pixels
+            && other.physical_pixels
+            && (self.width - other.width).abs() <= Self::POSITION_TOLERANCE_PX
+            && (self.height - other.height).abs() <= Self::POSITION_TOLERANCE_PX
+            && (self.x - other.x).abs() <= Self::POSITION_TOLERANCE_PX
+            && (self.y - other.y).abs() <= Self::POSITION_TOLERANCE_PX
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -60,8 +142,20 @@ impl Session {
             .is_none();
         let mut session: Self = serde_json::from_slice(&data)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        if session.window.is_some_and(|window| !window.is_valid()) {
+            session.window = None;
+        }
         session.open_tabs_missing = open_tabs_missing;
         Ok(session)
+    }
+
+    pub fn migrate_window_to_physical_pixels(&mut self, pixels_per_point: f32) {
+        if let Some(window) = self.window.as_mut() {
+            window.migrate_to_physical_pixels(pixels_per_point);
+            if !window.is_valid() {
+                self.window = None;
+            }
+        }
     }
 
     pub fn prepare_open_tabs(&mut self, note_ids: &[Uuid]) {
@@ -153,10 +247,49 @@ impl Session {
 
 #[cfg(test)]
 mod tests {
-    use super::Session;
+    use super::{Session, WindowGeom};
     use crate::paths::AppPaths;
+    use egui::{Rect, pos2, vec2};
     use std::fs;
     use uuid::Uuid;
+
+    #[test]
+    fn window_geometry_uses_inner_size_and_native_pixels() {
+        let geometry = WindowGeom::from_viewport(
+            Rect::from_min_size(pos2(20.0, 30.0), vec2(800.0, 600.0)),
+            Rect::from_min_size(pos2(10.0, 18.0), vec2(800.0, 600.0)),
+            1.5,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(geometry.width, 1200.0);
+        assert_eq!(geometry.height, 900.0);
+        assert_eq!(geometry.x, 15.0);
+        assert_eq!(geometry.y, 27.0);
+        assert!(geometry.physical_pixels);
+
+        let (size, position) = geometry.viewport_values(2.0).unwrap();
+        assert_eq!(size, vec2(600.0, 450.0));
+        assert_eq!(position, pos2(7.5, 13.5));
+    }
+
+    #[test]
+    fn legacy_window_geometry_migrates_once() {
+        let mut geometry: WindowGeom =
+            serde_json::from_str(r#"{"width":800.0,"height":600.0,"x":10.0,"y":20.0}"#).unwrap();
+
+        assert!(!geometry.physical_pixels);
+        geometry.migrate_to_physical_pixels(1.25);
+        assert_eq!(geometry.width, 1000.0);
+        assert_eq!(geometry.height, 750.0);
+        assert_eq!(geometry.x, 12.5);
+        assert_eq!(geometry.y, 25.0);
+        assert!(geometry.physical_pixels);
+
+        geometry.migrate_to_physical_pixels(2.0);
+        assert_eq!(geometry.width, 1000.0);
+    }
 
     #[test]
     fn old_sessions_migrate_all_notes_in_existing_order() {

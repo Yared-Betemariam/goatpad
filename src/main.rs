@@ -128,6 +128,9 @@ struct GoatpadApp {
     last_edit: Option<Instant>,
     dirty_since: Option<Instant>,
     last_session_save: Instant,
+    window_restore_target: Option<WindowGeom>,
+    window_restore_pending: bool,
+    window_restore_deadline: Option<Instant>,
     delete_confirmation: Option<Uuid>,
     tabs_list_open: bool,
     tabs_list_search: String,
@@ -194,6 +197,12 @@ impl GoatpadApp {
         let font_options = install_fonts(ctx);
         apply_theme(ctx, &theme_draft);
         ctx.set_zoom_factor(settings.app_zoom);
+        let pixels_per_point = ctx
+            .input(|input| input.viewport().native_pixels_per_point)
+            .unwrap_or(1.0)
+            * ctx.zoom_factor();
+        session.migrate_window_to_physical_pixels(pixels_per_point);
+        let window_restore_target = session.window.filter(WindowGeom::is_valid);
         let note_ids = workspace
             .documents
             .iter()
@@ -232,6 +241,9 @@ impl GoatpadApp {
             last_edit: None,
             dirty_since: None,
             last_session_save: Instant::now(),
+            window_restore_target,
+            window_restore_pending: window_restore_target.is_some(),
+            window_restore_deadline: None,
             delete_confirmation: None,
             tabs_list_open: false,
             tabs_list_search: String::new(),
@@ -1326,14 +1338,90 @@ impl GoatpadApp {
         }
     }
 
+    fn viewport_pixels_per_point(ctx: &egui::Context) -> Option<f32> {
+        let native_pixels_per_point =
+            ctx.input(|input| input.viewport().native_pixels_per_point)?;
+        let pixels_per_point = native_pixels_per_point * ctx.zoom_factor();
+        pixels_per_point.is_finite().then_some(pixels_per_point)
+    }
+
+    fn current_window_geometry(&self, ctx: &egui::Context, maximized: bool) -> Option<WindowGeom> {
+        let pixels_per_point = Self::viewport_pixels_per_point(ctx)?;
+        ctx.input(|input| {
+            WindowGeom::from_viewport(
+                input.viewport().inner_rect?,
+                input.viewport().outer_rect?,
+                pixels_per_point,
+                maximized,
+            )
+        })
+    }
+
+    fn restore_window_geometry(&mut self, ctx: &egui::Context) -> bool {
+        let Some(target) = self.window_restore_target else {
+            return false;
+        };
+        let now = Instant::now();
+
+        if self.window_restore_pending {
+            let Some(pixels_per_point) = Self::viewport_pixels_per_point(ctx) else {
+                ctx.request_repaint_after(Duration::from_millis(50));
+                return true;
+            };
+            let Some((size, position)) = target.viewport_values(pixels_per_point) else {
+                self.window_restore_target = None;
+                self.window_restore_pending = false;
+                return false;
+            };
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(position));
+            if target.maximized {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+            }
+            self.window_restore_pending = false;
+            self.window_restore_deadline = Some(now + Duration::from_secs(2));
+            return true;
+        }
+
+        let restored = if target.maximized {
+            ctx.input(|input| input.viewport().maximized.unwrap_or(false))
+        } else {
+            let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
+            !maximized
+                && self
+                    .current_window_geometry(ctx, false)
+                    .is_some_and(|current| current.approximately_matches(&target))
+        };
+        if restored
+            || self
+                .window_restore_deadline
+                .is_some_and(|deadline| now >= deadline)
+        {
+            self.window_restore_target = None;
+            self.window_restore_deadline = None;
+            return false;
+        }
+
+        ctx.request_repaint_after(Duration::from_millis(50));
+        true
+    }
+
     fn update_window_geometry(&mut self, ctx: &egui::Context) {
-        if let Some(rect) = ctx.input(|input| input.viewport().outer_rect) {
-            self.session.window = Some(WindowGeom {
-                width: rect.width(),
-                height: rect.height(),
-                x: rect.left(),
-                y: rect.top(),
-            });
+        let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
+        if let Some(window) = self.session.window.as_mut() {
+            window.maximized = maximized;
+        }
+        if ctx.input(|input| input.viewport().minimized.unwrap_or(false)) {
+            return;
+        }
+        if maximized {
+            if self.session.window.is_none() {
+                self.session.window = self.current_window_geometry(ctx, true);
+            }
+            return;
+        }
+        if let Some(geometry) = self.current_window_geometry(ctx, false) {
+            self.session.window = Some(geometry);
         }
     }
 
@@ -1935,7 +2023,9 @@ impl eframe::App for GoatpadApp {
         let ctx = ui.ctx().clone();
         self.poll_writer_results();
         self.poll_update_results(&ctx);
-        self.update_window_geometry(&ctx);
+        if !self.restore_window_geometry(&ctx) {
+            self.update_window_geometry(&ctx);
+        }
         self.dispatch_hotkeys(&ctx);
         let mut requested_switch = None;
         let mut requested_close = None;
@@ -2471,7 +2561,7 @@ impl eframe::App for GoatpadApp {
                     if active_is_markdown {
                         ui.separator();
                         let available_width = ui.available_width();
-                        if available_width < 380.0 {
+                        if available_width < 480.0 {
                             ui.menu_button("Format", |ui| {
                                 ui.menu_button(
                                     format!("{} Headings", egui_phosphor::regular::TEXT_H),
@@ -3545,21 +3635,20 @@ fn render_markdown_preview(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let paths = AppPaths::new()?;
     let session = Session::load(&paths)?;
-    let mut viewport = egui::ViewportBuilder::default()
+    let viewport = egui::ViewportBuilder::default()
         .with_inner_size([1000.0, 700.0])
         .with_min_inner_size([320.0, 210.0])
         .with_title("Goatpad")
         .with_icon(goatpad_icon())
         .with_decorations(false);
-    if let Some(window) = session.window {
-        viewport = viewport
-            .with_inner_size([window.width, window.height])
-            .with_position([window.x, window.y]);
-    }
     eframe::run_native(
         "Goatpad",
         eframe::NativeOptions {
             viewport,
+            // Goatpad owns its session file, including native window geometry.
+            // Keeping eframe's optional persistence disabled avoids two stores
+            // competing to restore the same viewport.
+            persist_window: false,
             ..Default::default()
         },
         Box::new(move |creation_context| {
