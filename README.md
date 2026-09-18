@@ -120,7 +120,7 @@ The `version` must be newer than the installed version. The MSI URL and manifest
 
 | Action                    | Shortcut                        |
 | ------------------------- | ------------------------------- |
-| New tab                   | `Ctrl+T`                        |
+| New tab                   | `Ctrl+N`                        |
 | Close tab                 | `Ctrl+W`                        |
 | Next tab                  | `Ctrl+Tab`                      |
 | Previous tab              | `Ctrl+Shift+Tab`                |
@@ -136,7 +136,7 @@ The `version` must be newer than the installed version. The MSI URL and manifest
 | Markdown preview          | `Shift+P`                       |
 | Close open panels         | `Escape`                        |
 
-Formatting shortcuts only apply to Markdown notes. Find results can be traversed with `Enter` and `Shift+Enter`. `Escape` closes open panels and popups, including the find bar, Tabs List, Settings, confirmation dialogs, rename and shortcut-rebinding states. Shortcuts can be changed from the Keyboard tab in application settings.
+Formatting shortcuts only apply to Markdown notes. Find results can be traversed with `Enter` and `Shift+Enter`. `Escape` closes open panels and popups, including the find bar, Tabs List, Settings, confirmation dialogs, rename and shortcut-rebinding states. Shortcuts can be changed from the Keyboard tab in application settings, where `Reset to defaults` restores every keyboard shortcut.
 
 When the Tabs List is open, the first visible note is selected automatically. Typing a search selects its first result; use `Up` and `Down` to move between results and `Enter` to open the selected note.
 
@@ -155,7 +155,7 @@ Goatpad unifies the application menus and formatting tools into a single, height
 The tabbed Settings window (`Ctrl+,`) contains two main tabs:
 
 - **Themes**: View built-in (`Dark` and `Light`) and custom themes. Built-in themes are protected; you can duplicate any theme to create a new custom palette. Custom themes can be renamed, edited, applied, or deleted. Editing options include primary, secondary, and background colors, font sizing, and independent font family selection.
-- **Keyboard**: Rebind any of the application hotkeys by clicking an action and pressing the replacement key combination.
+- **Keyboard**: Application shortcuts appear above Markdown formatting shortcuts. Rebind any hotkey by clicking an action and pressing the replacement key combination, or use `Reset to defaults` to restore the original bindings.
 
 The main document editor uses pure white text for dark themes and pure black text for light themes.
 

@@ -94,6 +94,10 @@ impl Default for Settings {
 }
 
 impl Settings {
+    pub fn reset_keybindings(&mut self) {
+        self.keybindings = default_bindings();
+    }
+
     pub fn load(paths: &AppPaths) -> io::Result<Self> {
         let path = paths.settings_path();
         if !path.exists() {
@@ -169,5 +173,17 @@ mod tests {
         let saved = fs::read_to_string(paths.settings_path()).unwrap();
         assert!(saved.contains("\"content_zoom\": 3.0"));
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn resetting_keybindings_restores_all_defaults() {
+        let mut settings = Settings::default();
+        settings
+            .keybindings
+            .insert(Action::NewTab, "Ctrl+Q".parse().unwrap());
+
+        settings.reset_keybindings();
+
+        assert_eq!(settings.keybindings, default_bindings());
     }
 }

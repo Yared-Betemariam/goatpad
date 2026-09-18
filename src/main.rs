@@ -991,13 +991,35 @@ impl GoatpadApp {
     fn render_keyboard_settings(&mut self, ui: &mut egui::Ui) {
         ui.heading("Keyboard shortcuts");
         ui.label("Click a shortcut, then press its replacement key combination.");
+        ui.horizontal(|ui| {
+            ui.label("Restore every shortcut to its default combination.");
+            if ui.button("Reset to defaults").clicked() {
+                self.reset_keyboard_shortcuts();
+            }
+        });
         ui.add_space(8.0);
         TableBuilder::new(ui)
             .striped(true)
             .column(Column::remainder())
             .column(Column::remainder())
             .body(|mut body| {
+                body.row(24.0, |mut row| {
+                    row.col(|ui| {
+                        ui.strong("Application");
+                    });
+                    row.col(|_| {});
+                });
+                let mut formatting_section_shown = false;
                 for action in Action::ALL {
+                    if action.is_formatting() && !formatting_section_shown {
+                        formatting_section_shown = true;
+                        body.row(24.0, |mut row| {
+                            row.col(|ui| {
+                                ui.strong("Markdown formatting");
+                            });
+                            row.col(|_| {});
+                        });
+                    }
                     body.row(24.0, |mut row| {
                         row.col(|ui| {
                             ui.label(action.label());
@@ -1021,6 +1043,17 @@ impl GoatpadApp {
                     });
                 }
             });
+    }
+
+    fn reset_keyboard_shortcuts(&mut self) {
+        self.settings.reset_keybindings();
+        self.rebinding = None;
+        match self.settings.save(&self.paths) {
+            Ok(()) => self.report_success("Keyboard shortcuts reset to defaults"),
+            Err(error) => {
+                self.report_error(format!("Could not save reset keyboard shortcuts: {error}"))
+            }
+        }
     }
 
     fn begin_rename(&mut self, id: Uuid) {
