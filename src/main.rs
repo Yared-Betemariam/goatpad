@@ -36,8 +36,8 @@ use theme::{Theme, apply_theme, ensure_default_themes, install_fonts, load_theme
 use updates::{ReleaseManifest, UpdateEvent};
 use workspace::Workspace;
 
-const TITLE_BAR_HEIGHT: f32 = 42.0;
-const TITLE_CONTENT_HEIGHT: f32 = 30.0;
+const TITLE_BAR_HEIGHT: f32 = 46.0;
+const TITLE_CONTENT_HEIGHT: f32 = TITLE_BAR_HEIGHT - 12.0;
 const TITLE_TAB_HEIGHT: f32 = TITLE_BAR_HEIGHT - 8.0;
 const ACTION_BAR_HEIGHT: f32 = 36.0;
 const FIND_BAR_HEIGHT: f32 = 38.0;
@@ -2118,27 +2118,26 @@ impl eframe::App for GoatpadApp {
                         );
                     }
 
+                    let desired_size = egui::vec2(TITLE_CONTENT_HEIGHT, TITLE_TAB_HEIGHT);
+                    let (outer_rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+
+                    let button_size = egui::vec2(18.0, 18.0);
+                    let button_rect = egui::Rect::from_center_size(outer_rect.center(), button_size);
+
                     let new_tab_response = ui
-                        .allocate_ui_with_layout(
-                            egui::vec2(TITLE_CONTENT_HEIGHT, TITLE_TAB_HEIGHT),
-                            egui::Layout::centered_and_justified(egui::Direction::BottomUp),
-                            |ui| {
-                                ui.add_sized(
-                                    [18.0, 18.0],
-                                    egui::Button::new(egui_phosphor::regular::PLUS)
-                                        .frame_when_inactive(false)
-                                        .corner_radius(5),
-                                )
-                            },
+                        .put(
+                            button_rect,
+                            egui::Button::new(egui_phosphor::regular::PLUS)
+                                .frame_when_inactive(false)
+                                .corner_radius(5),
                         )
-                        .inner
                         .on_hover_cursor(egui::CursorIcon::PointingHand);
                     if new_tab_response.on_hover_text("New tab").clicked() {
                         requested_new_tab = true;
                     }
                     let drag_width = (ui.available_width()
                         - 3.0 * WINDOW_BUTTON_WIDTH
-                        - 3.0 * TITLE_BAR_SPACING)
+                        - TITLE_BAR_SPACING)
                         .max(0.0);
                     if drag_width > 0.0 {
                         let drag_response = ui.allocate_response(
@@ -2150,16 +2149,37 @@ impl eframe::App for GoatpadApp {
                         }
                     }
 
-                    let minimize_response = ui
+                    let (minimize_response, maximize_response, close_response) = ui
                         .allocate_ui_with_layout(
-                            egui::vec2(WINDOW_BUTTON_WIDTH, TITLE_BAR_HEIGHT),
-                            egui::Layout::top_down(egui::Align::Center),
+                            egui::vec2(3.0 * WINDOW_BUTTON_WIDTH, TITLE_BAR_HEIGHT),
+                            egui::Layout::left_to_right(egui::Align::TOP),
                             |ui| {
-                                window_control_button(
+                                ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+
+                                let minimize_response = window_control_button(
                                     ui,
                                     WindowControlKind::Minimize,
                                     self.title_bar_color,
-                                )
+                                );
+                                let maximized =
+                                    ctx.input(|input| input.viewport().maximized.unwrap_or(false));
+                                let max_kind = if maximized {
+                                    WindowControlKind::Restore
+                                } else {
+                                    WindowControlKind::Maximize
+                                };
+                                let maximize_response = window_control_button(
+                                    ui,
+                                    max_kind,
+                                    self.title_bar_color,
+                                );
+                                let close_response = window_control_button(
+                                    ui,
+                                    WindowControlKind::Close,
+                                    self.title_bar_color,
+                                );
+
+                                (minimize_response, maximize_response, close_response)
                             },
                         )
                         .inner;
@@ -2167,37 +2187,12 @@ impl eframe::App for GoatpadApp {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                     }
                     let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
-                    let max_kind = if maximized {
-                        WindowControlKind::Restore
-                    } else {
-                        WindowControlKind::Maximize
-                    };
-                    let maximize_response = ui
-                        .allocate_ui_with_layout(
-                            egui::vec2(WINDOW_BUTTON_WIDTH, TITLE_BAR_HEIGHT),
-                            egui::Layout::top_down(egui::Align::Center),
-                            |ui| window_control_button(ui, max_kind, self.title_bar_color),
-                        )
-                        .inner;
                     if maximize_response
                         .on_hover_text(if maximized { "Restore" } else { "Maximize" })
                         .clicked()
                     {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
                     }
-                    let close_response = ui
-                        .allocate_ui_with_layout(
-                            egui::vec2(WINDOW_BUTTON_WIDTH, TITLE_BAR_HEIGHT),
-                            egui::Layout::top_down(egui::Align::Center),
-                            |ui| {
-                                window_control_button(
-                                    ui,
-                                    WindowControlKind::Close,
-                                    self.title_bar_color,
-                                )
-                            },
-                        )
-                        .inner;
                     if close_response.on_hover_text("Close").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
