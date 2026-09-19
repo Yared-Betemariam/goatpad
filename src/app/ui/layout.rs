@@ -9,7 +9,7 @@ pub(super) const WINDOW_BUTTON_WIDTH: f32 = 46.0;
 pub(super) const MIN_TITLE_DRAG_WIDTH: f32 = 12.0;
 pub(super) const MIN_TABS_WIDTH: f32 = 240.0;
 
-pub(super) const ACTION_BAR_HEIGHT: f32 = 36.0;
+pub(super) const ACTION_BAR_HEIGHT: f32 = 40.0;
 pub(super) const COMPACT_ACTION_BAR_WIDTH: f32 = 480.0;
 pub(super) const FIND_BAR_HEIGHT: f32 = 38.0;
 pub(super) const STATUS_BAR_HEIGHT: f32 = 34.0;

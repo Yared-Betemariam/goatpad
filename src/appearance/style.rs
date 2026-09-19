@@ -35,9 +35,9 @@ pub fn apply_theme(ctx: &egui::Context, theme: &Theme) {
     visuals.widgets.open.bg_stroke.color = theme.border_color();
     ctx.set_visuals(visuals);
     ctx.style_mut_of(egui_theme, |style| {
-        style.spacing.scroll.dormant_handle_opacity = 0.2;
-        style.spacing.scroll.active_handle_opacity = 0.2;
-        style.spacing.scroll.interact_handle_opacity = 0.2;
+        style.spacing.scroll.dormant_handle_opacity = 0.1;
+        style.spacing.scroll.active_handle_opacity = 0.1;
+        style.spacing.scroll.interact_handle_opacity = 0.1;
         for font_id in style.text_styles.values_mut() {
             font_id.family = theme.system_font_family();
             font_id.size = theme.font_size;

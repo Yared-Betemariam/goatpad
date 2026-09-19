@@ -5,6 +5,9 @@ impl GoatpadApp {
         self.tabs_list_open = open;
         self.focus_tabs_list_search = open;
         self.tabs_list_selected = None;
+        if !open {
+            self.tabs_list_search.clear();
+        }
     }
 
     pub(in crate::app) fn toggle_tabs_list(&mut self) {

@@ -145,12 +145,11 @@ impl GoatpadApp {
                 });
             self.tabs_list_open = list_open;
             if !self.tabs_list_open {
-                self.focus_tabs_list_search = false;
-                self.tabs_list_selected = None;
+                self.set_tabs_list_open(false);
             }
         }
         if let Some(id) = requested_list_open {
-            self.tabs_list_open = false;
+            self.set_tabs_list_open(false);
             self.activate_tab(id);
         }
         if let Some(id) = requested_list_delete {
