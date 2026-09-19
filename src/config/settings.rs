@@ -1,10 +1,16 @@
 use crate::{
-    hotkeys::{Action, Keybinding, default_bindings},
-    paths::AppPaths,
-    persistence::atomic_write,
+    appearance::DEFAULT_THEME_ID,
+    input::hotkeys::{Action, Keybinding, default_bindings},
+    services::{paths::AppPaths, persistence::atomic_write},
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{collections::HashMap, fs, io};
+
+pub const DEFAULT_CONTENT_ZOOM: f32 = 1.0;
+pub const MIN_CONTENT_ZOOM: f32 = 0.5;
+pub const MAX_CONTENT_ZOOM: f32 = 3.0;
+pub const CONTENT_ZOOM_STEP: f32 = 0.1;
+pub const DEFAULT_APP_ZOOM: f32 = 1.0;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Settings {
@@ -30,11 +36,11 @@ fn default_auto_check_updates() -> bool {
 }
 
 fn default_content_zoom() -> f32 {
-    1.0
+    DEFAULT_CONTENT_ZOOM
 }
 
 fn default_app_zoom() -> f32 {
-    1.0
+    DEFAULT_APP_ZOOM
 }
 
 fn default_spellcheck_enabled() -> bool {
@@ -43,9 +49,9 @@ fn default_spellcheck_enabled() -> bool {
 
 fn normalized_content_zoom(zoom: f32) -> f32 {
     if zoom.is_finite() {
-        zoom.clamp(0.5, 3.0)
+        zoom.clamp(MIN_CONTENT_ZOOM, MAX_CONTENT_ZOOM)
     } else {
-        1.0
+        DEFAULT_CONTENT_ZOOM
     }
 }
 
@@ -53,7 +59,7 @@ fn normalized_app_zoom(zoom: f32) -> f32 {
     if zoom.is_finite() && zoom > 0.0 {
         zoom
     } else {
-        1.0
+        DEFAULT_APP_ZOOM
     }
 }
 
@@ -77,7 +83,7 @@ where
 }
 
 pub fn default_theme_name() -> String {
-    "default-dark".to_owned()
+    DEFAULT_THEME_ID.to_owned()
 }
 
 impl Default for Settings {
@@ -129,7 +135,7 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::{Settings, default_bindings};
-    use crate::{hotkeys::Action, paths::AppPaths};
+    use crate::{input::hotkeys::Action, services::paths::AppPaths};
     use std::fs;
 
     #[test]

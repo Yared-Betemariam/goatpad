@@ -1,15 +1,12 @@
-use crate::{paths::AppPaths, persistence::atomic_write};
-use egui::FontData;
-use egui::{Color32, FontDefinitions, FontFamily, Visuals};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use egui::{FontData, FontDefinitions, FontFamily};
 use std::sync::Arc;
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-};
 
 #[cfg(target_os = "windows")]
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{ERROR_MORE_DATA, ERROR_NO_MORE_ITEMS};
@@ -78,7 +75,7 @@ const GENERIC_FONT_OPTIONS: &[&str] = &["Sans", "Monospace"];
 // This font is bundled so Ethiopic text does not depend on the user's selected
 // content font or on an optional Windows font installation.
 const AMHARIC_FONT_NAME: &str = "goatpad-amharic";
-const AMHARIC_FONT_DATA: &[u8] = include_bytes!("../assets/AbyssinicaSIL-Regular.ttf");
+const AMHARIC_FONT_DATA: &[u8] = include_bytes!("../../assets/AbyssinicaSIL-Regular.ttf");
 
 #[cfg(target_os = "windows")]
 const WINDOWS_AMHARIC_FONT_NAME: &str = "goatpad-amharic-windows";
@@ -152,195 +149,6 @@ struct InstalledFont {
     path: PathBuf,
     source_priority: u8,
     match_score: u8,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ThemeColor(pub Color32);
-
-impl ThemeColor {
-    pub const fn rgb(red: u8, green: u8, blue: u8) -> Self {
-        Self(Color32::from_rgb(red, green, blue))
-    }
-}
-
-impl Serialize for ThemeColor {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&format!(
-            "#{:02X}{:02X}{:02X}",
-            self.0.r(),
-            self.0.g(),
-            self.0.b()
-        ))
-    }
-}
-
-impl<'de> Deserialize<'de> for ThemeColor {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = String::deserialize(deserializer)?;
-        let hex = value.strip_prefix('#').unwrap_or(&value);
-        if hex.len() != 6 {
-            return Err(serde::de::Error::custom(
-                "colour must be a six-digit hex value",
-            ));
-        }
-        let component =
-            |range| u8::from_str_radix(&hex[range], 16).map_err(serde::de::Error::custom);
-        Ok(Self(Color32::from_rgb(
-            component(0..2)?,
-            component(2..4)?,
-            component(4..6)?,
-        )))
-    }
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct Theme {
-    pub name: String,
-    pub primary: ThemeColor,
-    pub secondary: ThemeColor,
-    pub background: ThemeColor,
-    pub system_font: String,
-    pub content_font: String,
-    pub font_size: f32,
-}
-
-impl<'de> Deserialize<'de> for Theme {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        struct ThemeRaw {
-            name: String,
-            primary: ThemeColor,
-            secondary: ThemeColor,
-            background: ThemeColor,
-            #[serde(default)]
-            system_font: Option<String>,
-            #[serde(default)]
-            content_font: Option<String>,
-            #[serde(default)]
-            font_family: Option<String>,
-            #[serde(default)]
-            font: Option<String>,
-            #[serde(default = "default_font_size")]
-            font_size: f32,
-        }
-
-        fn default_font_size() -> f32 {
-            16.0
-        }
-
-        let raw = ThemeRaw::deserialize(deserializer)?;
-        let fallback_font = raw
-            .font_family
-            .or(raw.font)
-            .unwrap_or_else(|| "Segoe UI".to_owned());
-        let system_font = raw.system_font.unwrap_or_else(|| fallback_font.clone());
-        let content_font = raw.content_font.unwrap_or(fallback_font);
-
-        Ok(Self {
-            name: raw.name,
-            primary: raw.primary,
-            secondary: raw.secondary,
-            background: raw.background,
-            system_font,
-            content_font,
-            font_size: raw.font_size,
-        })
-    }
-}
-
-// Color shaded title bar
-impl Theme {
-    pub fn is_dark(&self) -> bool {
-        self.background.0.r() < 128
-    }
-
-    pub fn title_bar_color(&self) -> Color32 {
-        let background =
-            shade_toward_contrast(self.background.0, if self.is_dark() { 0.04 } else { 0.06 });
-        let secondary = self.secondary.0;
-        Color32::from_rgb(
-            blend_channel(background.r(), secondary.r(), 0.04),
-            blend_channel(background.g(), secondary.g(), 0.04),
-            blend_channel(background.b(), secondary.b(), 0.04),
-        )
-    }
-
-    pub fn footer_color(&self) -> Color32 {
-        shade_toward_contrast(self.background.0, if self.is_dark() { 0.04 } else { 0.02 })
-    }
-
-    pub fn border_color(&self) -> Color32 {
-        if self.is_dark() {
-            Color32::from_rgba_premultiplied(24, 24, 24, 100)
-        } else {
-            Color32::from_rgba_premultiplied(32, 32, 32, 65)
-        }
-    }
-
-    pub fn default_dark() -> Self {
-        Self {
-            name: "default-dark".to_owned(),
-            primary: ThemeColor::rgb(111, 168, 255),
-            secondary: ThemeColor::rgb(132, 205, 150),
-            background: ThemeColor::rgb(28, 30, 34),
-            system_font: "Segoe UI".to_owned(),
-            content_font: "Segoe UI".to_owned(),
-            font_size: 16.0,
-        }
-    }
-
-    pub fn default_light() -> Self {
-        Self {
-            name: "default-light".to_owned(),
-            primary: ThemeColor::rgb(50, 100, 190),
-            secondary: ThemeColor::rgb(42, 125, 83),
-            background: ThemeColor::rgb(248, 249, 251),
-            system_font: "Segoe UI".to_owned(),
-            content_font: "Segoe UI".to_owned(),
-            font_size: 16.0,
-        }
-    }
-
-    pub fn system_font_family(&self) -> FontFamily {
-        Self::resolve_font_family(&self.system_font)
-    }
-
-    pub fn content_font_family(&self) -> FontFamily {
-        Self::resolve_font_family(&self.content_font)
-    }
-
-    pub fn resolve_font_family(font_name: &str) -> FontFamily {
-        match font_name {
-            "Monospace" => FontFamily::Monospace,
-            "Sans" => FontFamily::Proportional,
-            name => FontFamily::Name(name.into()),
-        }
-    }
-
-    pub fn is_builtin(&self) -> bool {
-        self.name == "default-dark" || self.name == "default-light"
-    }
-
-    pub fn display_name(&self) -> &str {
-        match self.name.as_str() {
-            "default-dark" => "Dark (Default)",
-            "default-light" => "Light (Default)",
-            custom => custom,
-        }
-    }
-}
-
-fn blend_channel(background: u8, target: u8, amount: f32) -> u8 {
-    (f32::from(background) + (f32::from(target) - f32::from(background)) * amount).round() as u8
-}
-
-fn shade_toward_contrast(background: Color32, amount: f32) -> Color32 {
-    let target = if background.r() < 128 { 255 } else { 0 };
-    Color32::from_rgb(
-        blend_channel(background.r(), target, amount),
-        blend_channel(background.g(), target, amount),
-        blend_channel(background.b(), target, amount),
-    )
 }
 
 /// Installs the supported fonts that are present on this machine while
@@ -708,123 +516,10 @@ fn install_windows_font(fonts: &mut FontDefinitions, family_name: &str, path: &P
     true
 }
 
-pub fn apply_theme(ctx: &egui::Context, theme: &Theme) {
-    let egui_theme = if theme.is_dark() {
-        egui::Theme::Dark
-    } else {
-        egui::Theme::Light
-    };
-    ctx.set_theme(egui_theme);
-    let mut visuals = if egui_theme == egui::Theme::Dark {
-        Visuals::dark()
-    } else {
-        Visuals::light()
-    };
-    let primary = theme.primary.0;
-    let secondary = theme.secondary.0;
-    let background = theme.background.0;
-    visuals.panel_fill = background;
-    visuals.window_fill = background;
-    visuals.extreme_bg_color = background;
-    visuals.faint_bg_color = secondary.gamma_multiply(0.13);
-    visuals.code_bg_color = secondary.gamma_multiply(0.20);
-    // visuals.selection.bg_fill = primary.gamma_multiply(0.50);
-    visuals.window_stroke.color = theme.border_color();
-    visuals.hyperlink_color = primary;
-    visuals.widgets.inactive.bg_fill = secondary.gamma_multiply(0.20);
-    visuals.widgets.hovered.bg_fill = secondary.gamma_multiply(0.42);
-    visuals.widgets.active.bg_fill = primary.gamma_multiply(0.60);
-    visuals.widgets.open.bg_fill = secondary.gamma_multiply(0.30);
-    visuals.widgets.noninteractive.bg_stroke.color = theme.border_color();
-    visuals.widgets.inactive.bg_stroke.color = theme.border_color();
-    visuals.widgets.hovered.bg_stroke.color = theme.border_color();
-    visuals.widgets.active.bg_stroke.color = theme.border_color();
-    visuals.widgets.open.bg_stroke.color = theme.border_color();
-    ctx.set_visuals(visuals);
-    ctx.style_mut_of(egui_theme, |style| {
-        style.spacing.scroll.dormant_handle_opacity = 0.2;
-        style.spacing.scroll.active_handle_opacity = 0.2;
-        style.spacing.scroll.interact_handle_opacity = 0.2;
-        for font_id in style.text_styles.values_mut() {
-            font_id.family = theme.system_font_family();
-            font_id.size = theme.font_size;
-        }
-    });
-}
-
-pub fn ensure_default_themes(paths: &AppPaths) -> io::Result<()> {
-    for theme in [Theme::default_dark(), Theme::default_light()] {
-        let path = theme_path(paths, &theme.name);
-        if !path.exists() {
-            save_theme(paths, &theme)?;
-        }
-    }
-    Ok(())
-}
-
-pub fn load_themes(paths: &AppPaths) -> io::Result<Vec<Theme>> {
-    let mut themes = fs::read_dir(paths.themes_dir())?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension()
-                .is_some_and(|extension| extension == "json")
-        })
-        .filter_map(|path| fs::read(path).ok())
-        .filter_map(|contents| serde_json::from_slice::<Theme>(&contents).ok())
-        .collect::<Vec<_>>();
-    themes.sort_by(|left, right| left.name.cmp(&right.name));
-    Ok(themes)
-}
-
-pub fn save_theme(paths: &AppPaths, theme: &Theme) -> io::Result<()> {
-    let data = serde_json::to_vec_pretty(theme)
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    atomic_write(&theme_path(paths, &theme.name), &data)
-}
-
-pub fn delete_theme(paths: &AppPaths, name: &str) -> io::Result<bool> {
-    if name == "default-dark" || name == "default-light" {
-        return Ok(false);
-    }
-    let path = theme_path(paths, name);
-    if path.exists() {
-        fs::remove_file(path)?;
-        Ok(true)
-    } else {
-        Ok(false)
-    }
-}
-
-fn theme_path(paths: &AppPaths, name: &str) -> PathBuf {
-    let slug = name
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character.to_ascii_lowercase()
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .trim_matches('-')
-        .to_owned();
-    paths.themes_dir().join(format!(
-        "{}.json",
-        if slug.is_empty() { "custom" } else { &slug }
-    ))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        AMHARIC_FONT_NAME, FONT_OPTIONS, Theme, ThemeColor, delete_theme, ensure_default_themes,
-        install_amharic_fallback, load_themes, save_theme,
-    };
-    use crate::paths::AppPaths;
+    use super::{AMHARIC_FONT_NAME, FONT_OPTIONS, install_amharic_fallback};
     use egui::{FontDefinitions, FontFamily};
-    use std::path::PathBuf;
-    use uuid::Uuid;
 
     #[test]
     fn font_catalog_has_at_least_twenty_choices() {
@@ -871,62 +566,5 @@ mod tests {
             Some(("Yu Gothic", 3))
         );
         assert!(super::supported_family("Not A Supported Font (TrueType)").is_none());
-    }
-
-    #[test]
-    fn theme_colour_round_trips_as_hex() {
-        let colour = ThemeColor::rgb(1, 171, 255);
-        assert_eq!(serde_json::to_string(&colour).unwrap(), "\"#01ABFF\"");
-        assert_eq!(
-            serde_json::from_str::<ThemeColor>("\"#01ABFF\"").unwrap(),
-            colour
-        );
-    }
-
-    #[test]
-    fn legacy_theme_deserialization_migrates_font_family_to_both_fonts() {
-        let legacy_json = r##"{
-            "name": "Legacy Theme",
-            "primary": "#112233",
-            "secondary": "#445566",
-            "background": "#778899",
-            "font_family": "Georgia",
-            "font_size": 18.0
-        }"##;
-        let theme: Theme = serde_json::from_str(legacy_json).unwrap();
-        assert_eq!(theme.system_font, "Georgia");
-        assert_eq!(theme.content_font, "Georgia");
-        assert_eq!(theme.font_size, 18.0);
-    }
-
-    #[test]
-    fn saved_custom_theme_is_loaded_with_default_presets() {
-        let directory = PathBuf::from(std::env::temp_dir())
-            .join(format!("goatpad-theme-test-{}", Uuid::new_v4()));
-        let paths = AppPaths::for_test(directory).unwrap();
-        ensure_default_themes(&paths).unwrap();
-        let mut custom = Theme::default_dark();
-        custom.name = "My writing theme".to_owned();
-        custom.primary = ThemeColor::rgb(10, 20, 30);
-        custom.system_font = "Segoe UI".to_owned();
-        custom.content_font = "Georgia".to_owned();
-        save_theme(&paths, &custom).unwrap();
-
-        let themes = load_themes(&paths).unwrap();
-        assert!(themes.iter().any(|theme| theme == &custom));
-        assert!(themes.iter().any(|theme| theme.name == "default-dark"));
-        assert!(themes.iter().any(|theme| theme.name == "default-light"));
-
-        // Test delete_theme
-        assert!(delete_theme(&paths, "My writing theme").unwrap());
-        let themes_after = load_themes(&paths).unwrap();
-        assert!(
-            !themes_after
-                .iter()
-                .any(|theme| theme.name == "My writing theme")
-        );
-
-        // Default themes cannot be deleted
-        assert!(!delete_theme(&paths, "default-dark").unwrap());
     }
 }

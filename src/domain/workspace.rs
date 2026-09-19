@@ -1,7 +1,6 @@
 use crate::{
-    document::{DocKind, Document, unix_timestamp_millis},
-    paths::AppPaths,
-    persistence::atomic_write,
+    domain::document::{DocKind, Document, unix_timestamp_millis},
+    services::{paths::AppPaths, persistence::atomic_write},
 };
 use serde::{Deserialize, Serialize};
 use std::{fs, io, path::Path};
@@ -328,7 +327,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::Workspace;
-    use crate::{document::DocKind, paths::AppPaths};
+    use crate::{domain::document::DocKind, services::paths::AppPaths};
     use std::fs;
 
     #[test]

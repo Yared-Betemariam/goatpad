@@ -25,7 +25,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 - Tabbed Settings window with full theme CRUD (create, duplicate, edit, delete), theme-aware editor text, and separate System and Content font selections
 - Configurable keyboard shortcuts
 - Local storage with no account or cloud service required
-- Optional in-app MSI updates: an HTTPS release manifest configured in `src/config.rs` can be checked, downloaded, verified, and installed from Settings → Updates
+- Optional in-app MSI updates: an HTTPS release manifest configured in `src/config/mod.rs` can be checked, downloaded, verified, and installed from Settings → Updates
 - Spell checking powered by the same Windows Spell Checking API (`ISpellChecker`) used by Notepad: misspelled words are underlined in red as you type, and right-clicking one offers dictionary-quality replacement suggestions, "Add to dictionary", and "Ignore". Toggle it from View → Check spelling
 
 ## Requirements
@@ -101,7 +101,7 @@ Close Goatpad before upgrading. Uninstalling or upgrading the application does n
 
 ## In-app updates
 
-Goatpad includes an opt-in update flow for MSI releases. Set `UPDATE_MANIFEST_URL` in `src/config.rs` to the HTTPS URL of a JSON release manifest. Goatpad checks it at startup (unless disabled), lets the user manually check from the File menu, verifies the optional SHA-256 checksum, then closes and starts the elevated MSI upgrade.
+Goatpad includes an in-app update flow for MSI releases. Set `UPDATE_MANIFEST_URL` in `src/config/mod.rs` to the HTTPS URL of a JSON release manifest. When an update source is configured, automatic checks are enabled by default and can be disabled in Settings. Goatpad also supports manual checks from the File menu, verifies the optional SHA-256 checksum, then closes and starts the elevated MSI upgrade.
 
 Host each release MSI and a manifest like this on HTTPS:
 
@@ -152,10 +152,11 @@ Goatpad unifies the application menus and formatting tools into a single, height
 
 ## Settings & Themes
 
-The tabbed Settings window (`Ctrl+,`) contains two main tabs:
+The tabbed Settings window (`Ctrl+,`) contains three main tabs:
 
 - **Themes**: View built-in (`Dark` and `Light`) and custom themes. Built-in themes are protected; you can duplicate any theme to create a new custom palette. Custom themes can be renamed, edited, applied, or deleted. Editing options include primary, secondary, and background colors, font sizing, and independent font family selection.
 - **Keyboard**: Application shortcuts appear above Markdown formatting shortcuts. Rebind any hotkey by clicking an action and pressing the replacement key combination, or use `Reset to defaults` to restore the original bindings.
+- **Updates**: Control automatic update checks, manually check the configured release manifest, and install available MSI releases.
 
 The main document editor uses pure white text for dark themes and pure black text for light themes.
 
@@ -198,7 +199,22 @@ cargo test
 cargo fmt -- --check
 ```
 
-The app-wide border color and opacity are centralized in `src/theme.rs` as `BORDER_COLOR`; the title bar intentionally has no border.
+Source code is organized by responsibility:
+
+```text
+src/
+├── app/          # Application coordination, resources, and focused egui components
+│   └── ui/       # Title/action/status bars, editor, panels, dialogs, and settings tabs
+├── appearance/   # Theme model, presets, fonts, styling, and persistence
+├── config/       # Static application configuration and persisted user settings
+├── domain/       # Documents and workspace behavior
+├── editor/       # Find, formatting, highlighting, and spell-check support
+├── input/        # Keyboard actions and configurable hotkeys
+├── services/     # Paths, persistence, sessions, and application updates
+└── main.rs       # Thin native application bootstrap
+```
+
+Shared UI dimensions and responsive breakpoints are centralized in `src/app/ui/layout.rs`. Theme-derived border colors are defined by the appearance model; the title bar intentionally has no border.
 
 ## Current limitations
 

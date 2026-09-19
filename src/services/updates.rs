@@ -1,4 +1,4 @@
-use crate::{paths::AppPaths, persistence::atomic_write};
+use crate::services::{paths::AppPaths, persistence::atomic_write};
 use semver::Version;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};

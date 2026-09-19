@@ -1,4 +1,4 @@
-use crate::document::DocKind;
+use crate::domain::document::DocKind;
 use std::{
     fs, io,
     path::Path,

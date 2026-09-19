@@ -1,4 +1,4 @@
-use crate::{paths::AppPaths, persistence::atomic_write};
+use crate::services::{paths::AppPaths, persistence::atomic_write};
 use egui::{Pos2, Rect, Vec2};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -248,7 +248,7 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::{Session, WindowGeom};
-    use crate::paths::AppPaths;
+    use crate::services::paths::AppPaths;
     use egui::{Rect, pos2, vec2};
     use std::fs;
     use uuid::Uuid;
