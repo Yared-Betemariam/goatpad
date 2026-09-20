@@ -220,7 +220,7 @@ fn push_style_span(
 
 /// Keeps list styling on list lines instead of allowing a list item's parser
 /// range to bleed into an unmarked lazy continuation line.
-fn list_line_ranges(text: &str, range: Range<usize>) -> Vec<Range<usize>> {
+pub(crate) fn list_line_ranges(text: &str, range: Range<usize>) -> Vec<Range<usize>> {
     let start = range.start.min(text.len());
     let end = range.end.min(text.len());
     if start >= end {

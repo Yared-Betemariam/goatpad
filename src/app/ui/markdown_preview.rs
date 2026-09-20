@@ -1,6 +1,7 @@
-use crate::editor::highlighting::{MarkdownPalette, MarkdownStyle};
+use crate::editor::highlighting::{MarkdownPalette, MarkdownStyle, list_line_ranges};
 use eframe::egui;
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use std::ops::Range;
 
 /// Renders Markdown as a read-only document. The preview intentionally uses the
 /// current content font and zoom so it feels like a locked version of the editor.
@@ -85,7 +86,7 @@ impl<'a> MarkdownRenderer<'a> {
         }
     }
 
-    fn active_style(&self) -> Option<MarkdownStyle> {
+    fn active_style(&self, list_line: bool) -> Option<MarkdownStyle> {
         if !self.highlighting_enabled {
             return None;
         }
@@ -99,14 +100,14 @@ impl<'a> MarkdownRenderer<'a> {
             Some(MarkdownStyle::Strong)
         } else if self.emphasis_depth > 0 {
             Some(MarkdownStyle::Emphasis)
-        } else if !self.lists.is_empty() {
+        } else if list_line && !self.lists.is_empty() {
             Some(MarkdownStyle::List)
         } else {
             None
         }
     }
 
-    fn format(&self) -> egui::text::TextFormat {
+    fn format(&self, list_line: bool) -> egui::text::TextFormat {
         let size = match self.heading {
             Some(HeadingLevel::H1) => 28.0,
             Some(HeadingLevel::H2) => 23.0,
@@ -114,7 +115,7 @@ impl<'a> MarkdownRenderer<'a> {
             Some(_) => 17.0,
             None => 16.0,
         } * self.zoom;
-        let mut format = self.active_style().map_or_else(
+        let mut format = self.active_style(list_line).map_or_else(
             || {
                 egui::text::TextFormat::simple(
                     egui::FontId::new(size, self.font_family.clone()),
@@ -168,10 +169,47 @@ impl<'a> MarkdownRenderer<'a> {
     }
 
     fn append_text(&mut self, text: &str) {
+        self.append_text_with_list_line(text, true);
+    }
+
+    fn append_text_with_source_range(
+        &mut self,
+        source: &str,
+        text: &str,
+        source_range: Range<usize>,
+    ) {
+        if text.is_empty() || self.lists.is_empty() || !self.highlighting_enabled {
+            self.append_text(text);
+            return;
+        }
+
+        let line_styles = list_line_styles(source, source_range);
+        let mut line_index = 0;
+        let mut text_start = 0;
+        for (index, character) in text.char_indices() {
+            if character == '\n' {
+                let text_end = index + character.len_utf8();
+                self.append_text_with_list_line(
+                    &text[text_start..text_end],
+                    line_styles.get(line_index).copied().unwrap_or(true),
+                );
+                text_start = text_end;
+                line_index += 1;
+            }
+        }
+        if text_start < text.len() {
+            self.append_text_with_list_line(
+                &text[text_start..],
+                line_styles.get(line_index).copied().unwrap_or(true),
+            );
+        }
+    }
+
+    fn append_text_with_list_line(&mut self, text: &str, list_line: bool) {
         if text.is_empty() {
             return;
         }
-        let format = self.format();
+        let format = self.format(list_line);
         self.append_formatted(text, format);
     }
 
@@ -197,7 +235,7 @@ impl<'a> MarkdownRenderer<'a> {
         if count == 0 {
             return;
         }
-        let format = self.format();
+        let format = self.format(true);
         let newlines = "\n".repeat(count);
         self.job.append(&newlines, 0.0, format);
         self.trailing_newlines += count;
@@ -295,6 +333,28 @@ impl<'a> MarkdownRenderer<'a> {
     }
 }
 
+fn list_line_styles(source: &str, source_range: Range<usize>) -> Vec<bool> {
+    let start = source_range.start.min(source.len());
+    let end = source_range.end.min(source.len());
+    if start >= end {
+        return Vec::new();
+    }
+
+    let mut line_start = source[..start].rfind('\n').map_or(0, |newline| newline + 1);
+    let mut styles = Vec::new();
+    while line_start < end {
+        let line_end = source[line_start..]
+            .find('\n')
+            .map_or(source.len(), |newline| line_start + newline + 1);
+        styles.push(!list_line_ranges(source, line_start..line_end).is_empty());
+        if line_end >= end {
+            break;
+        }
+        line_start = line_end;
+    }
+    styles
+}
+
 fn layout(
     markdown: &str,
     zoom: f32,
@@ -306,7 +366,7 @@ fn layout(
     let mut renderer =
         MarkdownRenderer::new(zoom, font_family, text_color, palette, highlighting_enabled);
 
-    for event in Parser::new_ext(markdown, Options::all()) {
+    for (event, source_range) in Parser::new_ext(markdown, Options::all()).into_offset_iter() {
         match event {
             Event::Start(Tag::Heading { level, .. }) => {
                 renderer.start_block();
@@ -353,7 +413,7 @@ fn layout(
             Event::Code(text) => {
                 let previous_code_block = renderer.code_block;
                 renderer.code_block = true;
-                renderer.append_text(&text);
+                renderer.append_text_with_source_range(markdown, &text, source_range);
                 renderer.code_block = previous_code_block;
             }
             Event::Text(text) => {
@@ -363,12 +423,14 @@ fn layout(
                         .strip_suffix("\r\n")
                         .or_else(|| text.strip_suffix('\n'))
                         .unwrap_or(text);
-                    renderer.append_text(text);
+                    renderer.append_text_with_source_range(markdown, text, source_range);
                 } else {
-                    renderer.append_text(text);
+                    renderer.append_text_with_source_range(markdown, text, source_range);
                 }
             }
-            Event::Html(text) | Event::InlineHtml(text) => renderer.append_text(&text),
+            Event::Html(text) | Event::InlineHtml(text) => {
+                renderer.append_text_with_source_range(markdown, &text, source_range)
+            }
             Event::SoftBreak | Event::HardBreak => renderer.request_line_break(),
             Event::Rule => {
                 renderer.start_block();
@@ -437,6 +499,28 @@ mod tests {
             rendered("Before\n\n```text\nlet value = 1;\n```\n\nAfter"),
             "Before\n\nlet value = 1;\n\nAfter"
         );
+    }
+
+    #[test]
+    fn preview_list_highlighting_does_not_bleed_into_unmarked_lines() {
+        let list_color = Color32::from_rgb(35, 120, 70);
+        let text_color = Color32::from_rgb(30, 30, 30);
+        let job = layout(
+            "- item\nplain continuation",
+            1.0,
+            &FontFamily::Proportional,
+            text_color,
+            MarkdownPalette::new(Color32::BLACK, list_color),
+            true,
+        );
+        let continuation_start = "• item\n".len();
+        let continuation = job
+            .sections
+            .iter()
+            .find(|section| section.byte_range.start.0 >= continuation_start)
+            .expect("continuation should have a layout section");
+
+        assert_eq!(continuation.format.color, text_color);
     }
 
     #[test]
