@@ -12,12 +12,12 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 - Modernized Phosphor vector iconography and native Windows-style vector window controls
 - Markdown and plain-text editing in persistent tabs, with new notes defaulting to plain text (`TXT`) and switchable per note (`MD`/`TXT`)
 - A unified action bar combining File/Edit/View menus, contextual Markdown formatting tools (headings, lists, bold, italic, strikethrough, link, table, clear formatting), and the note type switcher
-- A searchable Tabs List for reopening closed notes and explicitly deleting unwanted notes; opening it focuses the search field automatically, selects the first visible note, and supports Up/Down navigation plus Enter to open
+- A searchable, hierarchical Tabs List with unlimited nested folders; notes and folders can be created, renamed, deleted, dragged between folders, and reordered by dropping above or below another item
 - Inline find for the active note (`Ctrl+F`) or the entire local note collection (`Ctrl+Shift+F`), with yellow match highlighting and keyboard result navigation
 - VS Code-style multiline editing: hold `Alt` and click to add secondary carets, then type, paste, indent, or delete at every caret
 - The title-bar tabs strip automatically scrolls to keep the active tab visible whenever it changes, even when many tabs overflow the visible area
 - Automatic note titles derived from the first line (up to 20 characters); Markdown titles omit formatting markers, while plain-text titles preserve the original line
-- Import and export of all notes through portable JSON backups
+- Import and export of all notes and their folder hierarchy through portable JSON backups
 - Live Markdown highlighting, a read-only rendered Markdown preview, and common formatting actions, available from the action bar, the Edit menu, or keyboard shortcuts
 - A Notepad-style status bar with smaller, reduced-opacity footer text, cursor position, character count, document type, zoom control, line-ending, and encoding; content zoom and Ctrl-based app zoom persist between launches
 - Clean, padded status toasts with distinct success and error styling
@@ -139,7 +139,7 @@ The `version` must be newer than the installed version. The MSI URL and manifest
 
 Formatting shortcuts only apply to Markdown notes. Find results can be traversed with `Enter` and `Shift+Enter`. `Escape` closes open panels and popups, including the find bar, Tabs List, Settings, confirmation dialogs, rename and shortcut-rebinding states. Shortcuts can be changed from the Keyboard tab in application settings, where `Reset to defaults` restores every keyboard shortcut.
 
-When the Tabs List is open, the first visible note is selected automatically. Typing a search selects its first result; use `Up` and `Down` to move between results and `Enter` to open the selected note.
+When the Tabs List is open, the first visible note is selected automatically. Typing a search selects its first result; use `Up` and `Down` to move between results and `Enter` to open the selected note. Use `New folder` for a top-level folder or the `+` action on a folder for an unlimited-depth subfolder. Drag a note or folder onto a folder to move it inside; drag near the top or bottom of another row to place it before or after that item. The title-bar tabs can also be dragged to change their open-tab order.
 
 While editing a note, `Tab` inserts an indentation tab; `Ctrl+Tab` and `Ctrl+Shift+Tab` continue to switch between tabs.
 

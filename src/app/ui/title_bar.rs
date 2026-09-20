@@ -165,6 +165,7 @@ impl GoatpadApp {
         let mut requested_rename = None;
         let mut requested_new_tab = false;
         let mut finish_tab_rename = false;
+        self.tab_drop_target = None;
         let tabs = self
             .session
             .open_tabs
@@ -309,8 +310,18 @@ impl GoatpadApp {
                                                 })
                                                 .inner
                                                 .on_hover_text("Double-click to rename")
-                                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                                .interact(egui::Sense::click_and_drag());
 
+                                            if response.drag_started_by(egui::PointerButton::Primary) {
+                                                self.dragged_tab = Some(*id);
+                                            }
+                                            if self.dragged_tab.is_some()
+                                                && response.hovered()
+                                                && self.dragged_tab != Some(*id)
+                                            {
+                                                self.tab_drop_target = Some(*id);
+                                            }
                                             if response.clicked() {
                                                 requested_switch = Some(*id);
                                             }
@@ -411,6 +422,17 @@ impl GoatpadApp {
                     }
                 });
             });
+        if self.dragged_tab.is_some() && ctx.input(|input| input.pointer.any_released()) {
+            if let (Some(source), Some(target)) =
+                (self.dragged_tab.take(), self.tab_drop_target.take())
+            {
+                if self.session.move_tab_before(source, target) {
+                    self.save_session();
+                }
+            } else {
+                self.dragged_tab = None;
+            }
+        }
         if let Some(id) = requested_switch {
             self.activate_tab(id);
         }

@@ -219,6 +219,25 @@ impl Session {
         true
     }
 
+    pub fn move_tab_before(&mut self, id: Uuid, target: Uuid) -> bool {
+        if id == target {
+            return false;
+        }
+        let Some(source_index) = self.open_tabs.iter().position(|open_id| *open_id == id) else {
+            return false;
+        };
+        let Some(target_index) = self.open_tabs.iter().position(|open_id| *open_id == target)
+        else {
+            return false;
+        };
+        self.open_tabs.remove(source_index);
+        let insertion_index = target_index
+            .saturating_sub((source_index < target_index) as usize)
+            .min(self.open_tabs.len());
+        self.open_tabs.insert(insertion_index, id);
+        true
+    }
+
     pub fn cycle_tab(&mut self, forward: bool) -> Option<Uuid> {
         if self.open_tabs.len() <= 1 {
             return self.active_tab;
@@ -381,6 +400,21 @@ mod tests {
         assert_eq!(session.cycle_tab(true), Some(ids[1]));
         assert_eq!(session.cycle_tab(true), Some(ids[0]));
         assert_eq!(session.cycle_tab(false), Some(ids[1]));
+    }
+
+    #[test]
+    fn moving_open_tabs_preserves_order() {
+        let ids = [Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
+        let mut session = Session {
+            open_tabs: ids.to_vec(),
+            active_tab: Some(ids[0]),
+            open_tabs_missing: false,
+            ..Session::default()
+        };
+
+        assert!(session.move_tab_before(ids[2], ids[0]));
+        assert_eq!(session.open_tabs, vec![ids[2], ids[0], ids[1]]);
+        assert!(!session.move_tab_before(ids[2], ids[2]));
     }
 
     #[test]

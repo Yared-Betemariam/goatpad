@@ -23,7 +23,7 @@ impl DocKind {
 pub const AUTO_TITLE_MAX_CHARS: usize = 20;
 const UNTITLED_TITLE: &str = "Untitled";
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Document {
     pub id: Uuid,
     pub title: String,
@@ -31,6 +31,8 @@ pub struct Document {
     pub kind: DocKind,
     pub content: String,
     pub last_opened_at: u64,
+    pub folder_id: Option<Uuid>,
+    pub order: u64,
     pub dirty: bool,
 }
 
@@ -43,6 +45,8 @@ impl Document {
             kind: DocKind::Txt,
             content: String::new(),
             last_opened_at: unix_timestamp_millis(),
+            folder_id: None,
+            order: 0,
             dirty: false,
         }
     }

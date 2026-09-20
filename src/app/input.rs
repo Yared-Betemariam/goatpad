@@ -7,6 +7,9 @@ impl GoatpadApp {
         self.tabs_list_selected = None;
         if !open {
             self.tabs_list_search.clear();
+            self.dragged_workspace_item = None;
+            self.workspace_drop_target = None;
+            self.folder_editor = None;
         }
     }
 

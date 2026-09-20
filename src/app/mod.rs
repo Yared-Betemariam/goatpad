@@ -1,6 +1,7 @@
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 use std::{
+    collections::HashSet,
     ops::Range,
     sync::mpsc::{Receiver, Sender, TryRecvError},
     time::{Duration, Instant},
@@ -18,7 +19,10 @@ use crate::{
             CONTENT_ZOOM_STEP, DEFAULT_CONTENT_ZOOM, MAX_CONTENT_ZOOM, MIN_CONTENT_ZOOM, Settings,
         },
     },
-    domain::{document::DocKind, workspace::Workspace},
+    domain::{
+        document::DocKind,
+        workspace::{DropPlacement, Workspace, WorkspaceItem},
+    },
     editor::{
         find as editor_find, formatting, highlighting, multicursor, spellcheck::SpellChecker,
     },
@@ -67,6 +71,13 @@ struct FindState {
     current: Option<usize>,
 }
 
+struct FolderEditor {
+    id: Option<Uuid>,
+    parent_id: Option<Uuid>,
+    buffer: String,
+    focus: bool,
+}
+
 pub(crate) struct GoatpadApp {
     app_icon_texture: egui::TextureHandle,
     workspace: Workspace,
@@ -90,6 +101,12 @@ pub(crate) struct GoatpadApp {
     tabs_list_search: String,
     focus_tabs_list_search: bool,
     tabs_list_selected: Option<Uuid>,
+    expanded_folders: HashSet<Uuid>,
+    folder_editor: Option<FolderEditor>,
+    dragged_workspace_item: Option<WorkspaceItem>,
+    workspace_drop_target: Option<(WorkspaceItem, DropPlacement)>,
+    dragged_tab: Option<Uuid>,
+    tab_drop_target: Option<Uuid>,
     find: Option<FindState>,
     settings: Settings,
     settings_open: bool,
@@ -179,6 +196,11 @@ impl GoatpadApp {
             TabState::default()
         };
         session.save(&paths)?;
+        let expanded_folders = workspace
+            .folders
+            .iter()
+            .map(|folder| folder.id)
+            .collect::<HashSet<_>>();
         let (writer, writer_results) = start_writer_thread();
         let app_icon_texture = resources::load_app_icon_texture(ctx);
         let mut app = Self {
@@ -204,6 +226,12 @@ impl GoatpadApp {
             tabs_list_search: String::new(),
             focus_tabs_list_search: false,
             tabs_list_selected: None,
+            expanded_folders,
+            folder_editor: None,
+            dragged_workspace_item: None,
+            workspace_drop_target: None,
+            dragged_tab: None,
+            tab_drop_target: None,
             find: None,
             settings,
             settings_open: false,
