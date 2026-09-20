@@ -119,21 +119,21 @@ pub fn highlight(
             Event::Start(tag) => {
                 if let Some(style) = style_for_tag(&tag) {
                     active.push(style);
-                    spans.push((range, style));
+                    push_style_span(text, &mut spans, range, style);
                 }
             }
             Event::End(tag_end) => {
                 if let Some(style) = style_for_end(tag_end) {
-                    spans.push((range, style));
+                    push_style_span(text, &mut spans, range, style);
                     if let Some(index) = active.iter().rposition(|current| *current == style) {
                         active.remove(index);
                     }
                 }
             }
-            Event::Code(_) => spans.push((range, Style::Code)),
+            Event::Code(_) => push_style_span(text, &mut spans, range, Style::Code),
             Event::Text(_) | Event::Html(_) | Event::InlineHtml(_) => {
                 if let Some(style) = active.iter().max_by_key(|style| style.priority()) {
-                    spans.push((range, *style));
+                    push_style_span(text, &mut spans, range, *style);
                 }
             }
             _ => {}
@@ -194,6 +194,89 @@ fn style_for_end(tag: TagEnd) -> Option<Style> {
         TagEnd::Item => Some(Style::List),
         _ => None,
     }
+}
+
+fn push_style_span(
+    text: &str,
+    spans: &mut Vec<(Range<usize>, Style)>,
+    range: Range<usize>,
+    style: Style,
+) {
+    if style == Style::List {
+        spans.extend(
+            list_line_ranges(text, range)
+                .into_iter()
+                .map(|range| (range, style)),
+        );
+    } else {
+        spans.push((range, style));
+    }
+}
+
+/// Keeps list styling on list lines instead of allowing a list item's parser
+/// range to bleed into an unmarked lazy continuation line.
+fn list_line_ranges(text: &str, range: Range<usize>) -> Vec<Range<usize>> {
+    let start = range.start.min(text.len());
+    let end = range.end.min(text.len());
+    if start >= end {
+        return Vec::new();
+    }
+
+    let mut line_start = text[..start].rfind('\n').map_or(0, |newline| newline + 1);
+    let mut result = Vec::new();
+
+    while line_start < end {
+        let line_end = text[line_start..]
+            .find('\n')
+            .map_or(text.len(), |newline| line_start + newline + 1);
+        if is_list_line(&text[line_start..line_end]) {
+            let clipped_start = start.max(line_start);
+            let clipped_end = end.min(line_end);
+            if clipped_start < clipped_end {
+                result.push(clipped_start..clipped_end);
+            }
+        }
+        if line_end >= end {
+            break;
+        }
+        line_start = line_end;
+    }
+
+    result
+}
+
+fn is_list_line(line: &str) -> bool {
+    let line = line.trim_end_matches(['\n', '\r']);
+    let bytes = line.as_bytes();
+    let mut marker_start = 0;
+    while marker_start < bytes.len() && bytes[marker_start] == b' ' && marker_start < 3 {
+        marker_start += 1;
+    }
+
+    let Some(&marker) = bytes.get(marker_start) else {
+        return false;
+    };
+    if matches!(marker, b'-' | b'+' | b'*') {
+        return bytes
+            .get(marker_start + 1)
+            .is_none_or(|byte| byte.is_ascii_whitespace());
+    }
+
+    let digits_start = marker_start;
+    let mut digits_end = digits_start;
+    while digits_end < bytes.len()
+        && bytes[digits_end].is_ascii_digit()
+        && digits_end - digits_start < 9
+    {
+        digits_end += 1;
+    }
+    digits_end > digits_start
+        && bytes
+            .get(digits_end)
+            .is_some_and(|byte| matches!(byte, b'.' | b')'))
+        && bytes
+            .get(digits_end + 1)
+            .is_none_or(|byte| byte.is_ascii_whitespace())
 }
 
 fn layout_with_spans(
@@ -456,5 +539,27 @@ mod tests {
 
         assert!(light_heading.format.font_id.size == 16.0);
         assert!(dark_heading.format.font_id.size == 16.0);
+    }
+
+    #[test]
+    fn markdown_list_highlighting_does_not_bleed_into_an_unmarked_line() {
+        let text = "- item\nplain paragraph";
+        let job = highlight(
+            text,
+            1.0,
+            &FontFamily::Proportional,
+            Color32::DARK_GRAY,
+            false,
+            &[],
+            &[],
+        );
+        let list_color = Color32::from_rgb(35, 120, 70);
+
+        assert!(job.sections.iter().any(|section| {
+            section.byte_range.start.0 < 6 && section.format.color == list_color
+        }));
+        assert!(job.sections.iter().any(|section| {
+            section.byte_range.start.0 >= 7 && section.format.color == Color32::DARK_GRAY
+        }));
     }
 }
