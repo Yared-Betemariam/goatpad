@@ -36,12 +36,15 @@ impl GoatpadApp {
                     is_markdown && self.session.markdown_previews.contains(&document_id);
                 let zoom = self.zoom;
                 let font_family = self.theme_draft.content_font_family();
-                let dark_mode = ui.visuals().dark_mode;
-                let text_color = if dark_mode {
+                let text_color = if ui.visuals().dark_mode {
                     egui::Color32::WHITE
                 } else {
                     egui::Color32::BLACK
                 };
+                let markdown_palette = highlighting::MarkdownPalette::new(
+                    self.theme_draft.primary.0,
+                    self.theme_draft.secondary.0,
+                );
                 if preview_active {
                     let output = egui::ScrollArea::vertical()
                         .id_salt(("markdown-preview-scroll", document_id))
@@ -60,6 +63,8 @@ impl GoatpadApp {
                                 zoom,
                                 &font_family,
                                 text_color,
+                                markdown_palette,
+                                self.settings.markdown_preview_highlighting_enabled,
                             );
                         });
                     self.scroll_offset = output.state.offset.y;
@@ -95,7 +100,7 @@ impl GoatpadApp {
                                 zoom,
                                 &font_family,
                                 text_color,
-                                dark_mode,
+                                markdown_palette,
                                 &layouter_misspelled,
                                 &layouter_find_ranges,
                             )

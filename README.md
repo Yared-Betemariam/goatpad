@@ -18,7 +18,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 - The title-bar tabs strip automatically scrolls to keep the active tab visible whenever it changes, even when many tabs overflow the visible area
 - Automatic note titles derived from the first line (up to 20 characters); Markdown titles omit formatting markers, while plain-text titles preserve the original line
 - Import and export of all notes and their folder hierarchy through portable JSON backups
-- Live Markdown highlighting, a read-only rendered Markdown preview with consistent block spacing plus ordered and nested lists, and common formatting actions, available from the action bar, the Edit menu, or keyboard shortcuts
+- Live Markdown highlighting using each theme's primary and secondary colors, a read-only rendered Markdown preview with consistent block spacing plus ordered and nested lists, and common formatting actions, available from the action bar, the Edit menu, or keyboard shortcuts; preview coloring can be toggled from View and is enabled by default
 - A Notepad-style status bar with smaller, reduced-opacity footer text, cursor position, character count, document type, zoom control, line-ending, and encoding; content zoom and Ctrl-based app zoom persist between launches
 - Clean, padded status toasts with distinct success and error styling
 - Automatic background saving
@@ -151,7 +151,7 @@ Goatpad unifies the application menus and formatting tools into a single, height
 
 - **Actions**: Tabs List, followed by the File, Edit, and View menus on the left.
 - **Markdown options**: A heading dropdown (H1–H3), list dropdown (bulleted/numbered), bold, italic, strikethrough, link, table, and clear-formatting controls in the center. These tools are rendered only when the active note is Markdown (`MD`); for plain-text notes (`TXT`), the region collapses without changing the bar's height. On constrained window widths, tools collapse cleanly into a "Format" overflow menu.
-- **Document switcher**: An immediate `MD`/`TXT` switch at the right edge of the bar (also switchable via the `View` menu or `Ctrl+M`). Markdown notes additionally show a preview icon beside this switcher. Activating it renders the note across the full content view and locks text editing; toggle it with `Ctrl+O`.
+- **Document switcher**: An immediate `MD`/`TXT` switch at the right edge of the bar (also switchable via the `View` menu or `Ctrl+M`). Markdown notes additionally show a preview icon beside this switcher. Activating it renders the note across the full content view and locks text editing; toggle it with `Ctrl+O`. The `View` menu also includes a persisted `Color highlighting in Markdown preview` toggle, enabled by default.
 
 ## Settings & Themes
 

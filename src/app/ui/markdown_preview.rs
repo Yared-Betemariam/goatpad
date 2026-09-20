@@ -1,3 +1,4 @@
+use crate::editor::highlighting::{MarkdownPalette, MarkdownStyle};
 use eframe::egui;
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
@@ -9,10 +10,20 @@ pub(super) fn render(
     zoom: f32,
     font_family: &egui::FontFamily,
     text_color: egui::Color32,
+    palette: MarkdownPalette,
+    highlighting_enabled: bool,
 ) {
-    let mut job = layout(markdown, zoom, font_family, text_color);
+    let mut job = layout(
+        markdown,
+        zoom,
+        font_family,
+        text_color,
+        palette,
+        highlighting_enabled,
+    );
     if job.text.trim().is_empty() {
-        let mut placeholder = MarkdownRenderer::new(zoom, font_family, text_color);
+        let mut placeholder =
+            MarkdownRenderer::new(zoom, font_family, text_color, palette, highlighting_enabled);
         placeholder.append_text("Nothing to preview.");
         job = placeholder.job;
     }
@@ -32,6 +43,8 @@ struct MarkdownRenderer<'a> {
     zoom: f32,
     font_family: &'a egui::FontFamily,
     text_color: egui::Color32,
+    palette: MarkdownPalette,
+    highlighting_enabled: bool,
     heading: Option<HeadingLevel>,
     strong_depth: usize,
     emphasis_depth: usize,
@@ -45,12 +58,20 @@ struct MarkdownRenderer<'a> {
 }
 
 impl<'a> MarkdownRenderer<'a> {
-    fn new(zoom: f32, font_family: &'a egui::FontFamily, text_color: egui::Color32) -> Self {
+    fn new(
+        zoom: f32,
+        font_family: &'a egui::FontFamily,
+        text_color: egui::Color32,
+        palette: MarkdownPalette,
+        highlighting_enabled: bool,
+    ) -> Self {
         Self {
             job: egui::text::LayoutJob::default(),
             zoom,
             font_family,
             text_color,
+            palette,
+            highlighting_enabled,
             heading: None,
             strong_depth: 0,
             emphasis_depth: 0,
@@ -64,6 +85,27 @@ impl<'a> MarkdownRenderer<'a> {
         }
     }
 
+    fn active_style(&self) -> Option<MarkdownStyle> {
+        if !self.highlighting_enabled {
+            return None;
+        }
+        if self.heading.is_some() {
+            Some(MarkdownStyle::Heading)
+        } else if self.code_block {
+            Some(MarkdownStyle::Code)
+        } else if self.link_depth > 0 {
+            Some(MarkdownStyle::Link)
+        } else if self.strong_depth > 0 {
+            Some(MarkdownStyle::Strong)
+        } else if self.emphasis_depth > 0 {
+            Some(MarkdownStyle::Emphasis)
+        } else if !self.lists.is_empty() {
+            Some(MarkdownStyle::List)
+        } else {
+            None
+        }
+    }
+
     fn format(&self) -> egui::text::TextFormat {
         let size = match self.heading {
             Some(HeadingLevel::H1) => 28.0,
@@ -72,16 +114,25 @@ impl<'a> MarkdownRenderer<'a> {
             Some(_) => 17.0,
             None => 16.0,
         } * self.zoom;
-        let mut format = egui::text::TextFormat::simple(
-            egui::FontId::new(
-                size,
-                if self.code_block {
-                    egui::FontFamily::Monospace
-                } else {
-                    self.font_family.clone()
-                },
-            ),
-            self.text_color,
+        let mut format = self.active_style().map_or_else(
+            || {
+                egui::text::TextFormat::simple(
+                    egui::FontId::new(size, self.font_family.clone()),
+                    self.text_color,
+                )
+            },
+            |style| {
+                self.palette
+                    .format(style, self.zoom, self.font_family, self.text_color)
+            },
+        );
+        format.font_id = egui::FontId::new(
+            size,
+            if self.code_block {
+                egui::FontFamily::Monospace
+            } else {
+                self.font_family.clone()
+            },
         );
         if self.strong_depth > 0 {
             format.font_id.size *= 1.08;
@@ -92,17 +143,28 @@ impl<'a> MarkdownRenderer<'a> {
         if self.strikethrough_depth > 0 {
             format.strikethrough = egui::Stroke::new(1.0, self.text_color);
         }
-        if self.link_depth > 0 {
+        if self.link_depth > 0 && !self.highlighting_enabled {
             format.underline = egui::Stroke::new(1.0, self.text_color);
         }
         format
     }
 
     fn marker_format(&self) -> egui::text::TextFormat {
-        egui::text::TextFormat::simple(
-            egui::FontId::new(self.zoom * 16.0, self.font_family.clone()),
-            self.text_color,
-        )
+        let mut format = if self.highlighting_enabled {
+            self.palette.format(
+                MarkdownStyle::List,
+                self.zoom,
+                self.font_family,
+                self.text_color,
+            )
+        } else {
+            egui::text::TextFormat::simple(
+                egui::FontId::new(self.zoom * 16.0, self.font_family.clone()),
+                self.text_color,
+            )
+        };
+        format.font_id = egui::FontId::new(self.zoom * 16.0, self.font_family.clone());
+        format
     }
 
     fn append_text(&mut self, text: &str) {
@@ -238,8 +300,11 @@ fn layout(
     zoom: f32,
     font_family: &egui::FontFamily,
     text_color: egui::Color32,
+    palette: MarkdownPalette,
+    highlighting_enabled: bool,
 ) -> egui::text::LayoutJob {
-    let mut renderer = MarkdownRenderer::new(zoom, font_family, text_color);
+    let mut renderer =
+        MarkdownRenderer::new(zoom, font_family, text_color, palette, highlighting_enabled);
 
     for event in Parser::new_ext(markdown, Options::all()) {
         match event {
@@ -319,10 +384,19 @@ fn layout(
 #[cfg(test)]
 mod tests {
     use super::layout;
+    use crate::editor::highlighting::MarkdownPalette;
     use egui::{Color32, FontFamily};
 
     fn rendered(markdown: &str) -> String {
-        layout(markdown, 1.0, &FontFamily::Proportional, Color32::BLACK).text
+        layout(
+            markdown,
+            1.0,
+            &FontFamily::Proportional,
+            Color32::BLACK,
+            MarkdownPalette::new(Color32::BLACK, Color32::DARK_GRAY),
+            true,
+        )
+        .text
     }
 
     #[test]
@@ -362,6 +436,66 @@ mod tests {
         assert_eq!(
             rendered("Before\n\n```text\nlet value = 1;\n```\n\nAfter"),
             "Before\n\nlet value = 1;\n\nAfter"
+        );
+    }
+
+    #[test]
+    fn preview_highlighting_uses_the_theme_palette() {
+        let primary = Color32::from_rgb(12, 34, 56);
+        let secondary = Color32::from_rgb(78, 90, 123);
+        let job = layout(
+            "# Heading\n\n`code`\n\n- item\n\n[link](https://example.com)",
+            1.0,
+            &FontFamily::Proportional,
+            Color32::BLACK,
+            MarkdownPalette::new(primary, secondary),
+            true,
+        );
+
+        assert!(
+            job.sections
+                .iter()
+                .any(|section| section.format.color == primary)
+        );
+        assert!(
+            job.sections
+                .iter()
+                .any(|section| section.format.color == secondary)
+        );
+        assert!(
+            job.sections
+                .iter()
+                .any(|section| section.format.background == secondary.gamma_multiply(0.20))
+        );
+    }
+
+    #[test]
+    fn preview_highlighting_can_be_disabled_without_removing_markdown_formatting() {
+        let primary = Color32::from_rgb(12, 34, 56);
+        let secondary = Color32::from_rgb(78, 90, 123);
+        let job = layout(
+            "# Heading\n\n`code`\n\n[link](https://example.com)",
+            1.0,
+            &FontFamily::Proportional,
+            Color32::BLACK,
+            MarkdownPalette::new(primary, secondary),
+            false,
+        );
+
+        assert!(
+            job.sections
+                .iter()
+                .all(|section| section.format.color == Color32::BLACK)
+        );
+        assert!(
+            job.sections
+                .iter()
+                .all(|section| section.format.background == Color32::TRANSPARENT)
+        );
+        assert!(
+            job.sections
+                .iter()
+                .any(|section| section.format.font_id.family == egui::FontFamily::Monospace)
         );
     }
 }

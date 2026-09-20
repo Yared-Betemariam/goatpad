@@ -29,6 +29,8 @@ pub struct Settings {
     pub app_zoom: f32,
     #[serde(default = "default_spellcheck_enabled")]
     pub spellcheck_enabled: bool,
+    #[serde(default = "default_markdown_preview_highlighting_enabled")]
+    pub markdown_preview_highlighting_enabled: bool,
 }
 
 fn default_auto_check_updates() -> bool {
@@ -44,6 +46,10 @@ fn default_app_zoom() -> f32 {
 }
 
 fn default_spellcheck_enabled() -> bool {
+    true
+}
+
+fn default_markdown_preview_highlighting_enabled() -> bool {
     true
 }
 
@@ -95,6 +101,7 @@ impl Default for Settings {
             content_zoom: default_content_zoom(),
             app_zoom: default_app_zoom(),
             spellcheck_enabled: default_spellcheck_enabled(),
+            markdown_preview_highlighting_enabled: default_markdown_preview_highlighting_enabled(),
         }
     }
 }
@@ -175,9 +182,11 @@ mod tests {
         let settings = Settings::load(&paths).unwrap();
         assert_eq!(settings.content_zoom, 3.0);
         assert_eq!(settings.app_zoom, 1.25);
+        assert!(settings.markdown_preview_highlighting_enabled);
 
         let saved = fs::read_to_string(paths.settings_path()).unwrap();
         assert!(saved.contains("\"content_zoom\": 3.0"));
+        assert!(saved.contains("\"markdown_preview_highlighting_enabled\": true"));
         fs::remove_dir_all(directory).unwrap();
     }
 

@@ -232,6 +232,22 @@ impl GoatpadApp {
                             self.save_settings();
                             ui.close();
                         }
+                        if active_is_markdown {
+                            let preview_highlighting_response = ui
+                                .selectable_label(
+                                    self.settings.markdown_preview_highlighting_enabled,
+                                    "Color highlighting in Markdown preview",
+                                )
+                                .on_hover_text(
+                                    "Use the theme primary and secondary colors in Markdown preview",
+                                );
+                            if preview_highlighting_response.clicked() {
+                                self.settings.markdown_preview_highlighting_enabled =
+                                    !self.settings.markdown_preview_highlighting_enabled;
+                                self.save_settings();
+                                ui.close();
+                            }
+                        }
                         ui.separator();
                         ui.menu_button("Theme", |ui| {
                             for theme in self.themes.clone() {

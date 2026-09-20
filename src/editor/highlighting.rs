@@ -6,7 +6,7 @@ use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Style {
+pub(crate) enum MarkdownStyle {
     Heading,
     Strong,
     Emphasis,
@@ -15,7 +15,29 @@ enum Style {
     List,
 }
 
-impl Style {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct MarkdownPalette {
+    primary: Color32,
+    secondary: Color32,
+}
+
+impl MarkdownPalette {
+    pub(crate) const fn new(primary: Color32, secondary: Color32) -> Self {
+        Self { primary, secondary }
+    }
+
+    pub(crate) fn format(
+        self,
+        style: MarkdownStyle,
+        zoom: f32,
+        font_family: &FontFamily,
+        text_color: Color32,
+    ) -> TextFormat {
+        style.format(zoom, font_family, text_color, self)
+    }
+}
+
+impl MarkdownStyle {
     fn priority(self) -> u8 {
         match self {
             Self::Heading => 6,
@@ -32,43 +54,25 @@ impl Style {
         zoom: f32,
         font_family: &FontFamily,
         text_color: Color32,
-        dark_mode: bool,
+        palette: MarkdownPalette,
     ) -> TextFormat {
         let mut format = default_format(zoom, font_family, text_color);
         match self {
-            Self::Heading => {
-                format.color = if dark_mode {
-                    Color32::from_rgb(137, 190, 255)
-                } else {
-                    Color32::from_rgb(42, 91, 166)
-                };
+            Self::Heading | Self::Link => {
+                format.color = palette.primary;
+                if self == Self::Link {
+                    format.underline = Stroke::new(1.0, palette.primary);
+                }
             }
             Self::Strong => {}
             Self::Emphasis => format.italics = true,
             Self::Code => {
                 format.font_id = FontId::new(16.0 * zoom, FontFamily::Monospace);
-                if dark_mode {
-                    format.color = Color32::from_rgb(255, 196, 107);
-                    format.background = Color32::from_rgb(55, 55, 62);
-                } else {
-                    format.color = Color32::from_rgb(155, 83, 14);
-                    format.background = Color32::from_rgb(244, 237, 222);
-                }
-            }
-            Self::Link => {
-                format.color = if dark_mode {
-                    Color32::from_rgb(120, 205, 255)
-                } else {
-                    Color32::from_rgb(26, 98, 160)
-                };
-                format.underline = Stroke::new(1.0, format.color);
+                format.color = palette.secondary;
+                format.background = palette.secondary.gamma_multiply(0.20);
             }
             Self::List => {
-                format.color = if dark_mode {
-                    Color32::from_rgb(155, 226, 170)
-                } else {
-                    Color32::from_rgb(35, 120, 70)
-                };
+                format.color = palette.secondary;
             }
         }
         format
@@ -98,21 +102,20 @@ fn mark_find_match(mut format: TextFormat) -> TextFormat {
 
 /// Produces a live Markdown layout while preserving the editor's original text.
 /// `zoom` scales every font size uniformly, mirroring Notepad's zoom control.
-/// `dark_mode` selects brighter syntax colors for dark themes and darker colors
-/// for light themes.
+/// `palette` supplies the active theme's primary and secondary syntax colors.
 /// `misspelled` lists the UTF-8 byte ranges that should be underlined in red.
 /// `find_matches` lists ranges that should receive a yellow background.
-pub fn highlight(
+pub(crate) fn highlight(
     text: &str,
     zoom: f32,
     font_family: &FontFamily,
     text_color: Color32,
-    dark_mode: bool,
+    palette: MarkdownPalette,
     misspelled: &[Range<usize>],
     find_matches: &[Range<usize>],
 ) -> LayoutJob {
-    let mut spans = Vec::<(Range<usize>, Style)>::new();
-    let mut active = Vec::<Style>::new();
+    let mut spans = Vec::<(Range<usize>, MarkdownStyle)>::new();
+    let mut active = Vec::<MarkdownStyle>::new();
 
     for (event, range) in Parser::new_ext(text, Options::all()).into_offset_iter() {
         match event {
@@ -130,7 +133,7 @@ pub fn highlight(
                     }
                 }
             }
-            Event::Code(_) => push_style_span(text, &mut spans, range, Style::Code),
+            Event::Code(_) => push_style_span(text, &mut spans, range, MarkdownStyle::Code),
             Event::Text(_) | Event::Html(_) | Event::InlineHtml(_) => {
                 if let Some(style) = active.iter().max_by_key(|style| style.priority()) {
                     push_style_span(text, &mut spans, range, *style);
@@ -146,7 +149,7 @@ pub fn highlight(
         zoom,
         font_family,
         text_color,
-        dark_mode,
+        palette,
         misspelled,
         find_matches,
     )
@@ -154,7 +157,7 @@ pub fn highlight(
 
 /// Produces a plain-text layout, underlining misspelled words (given as
 /// UTF-8 byte ranges) in red.
-pub fn plain(
+pub(crate) fn plain(
     text: &str,
     zoom: f32,
     font_family: &FontFamily,
@@ -168,41 +171,43 @@ pub fn plain(
         zoom,
         font_family,
         text_color,
-        false,
+        MarkdownPalette::new(text_color, text_color),
         misspelled,
         find_matches,
     )
 }
 
-fn style_for_tag(tag: &Tag<'_>) -> Option<Style> {
+fn style_for_tag(tag: &Tag<'_>) -> Option<MarkdownStyle> {
     match tag {
-        Tag::Heading { .. } => Some(Style::Heading),
-        Tag::Strong => Some(Style::Strong),
-        Tag::Emphasis => Some(Style::Emphasis),
-        Tag::Link { .. } => Some(Style::Link),
-        Tag::Item => Some(Style::List),
+        Tag::Heading { .. } => Some(MarkdownStyle::Heading),
+        Tag::Strong => Some(MarkdownStyle::Strong),
+        Tag::Emphasis => Some(MarkdownStyle::Emphasis),
+        Tag::Link { .. } => Some(MarkdownStyle::Link),
+        Tag::CodeBlock(_) => Some(MarkdownStyle::Code),
+        Tag::Item => Some(MarkdownStyle::List),
         _ => None,
     }
 }
 
-fn style_for_end(tag: TagEnd) -> Option<Style> {
+fn style_for_end(tag: TagEnd) -> Option<MarkdownStyle> {
     match tag {
-        TagEnd::Heading(_) => Some(Style::Heading),
-        TagEnd::Strong => Some(Style::Strong),
-        TagEnd::Emphasis => Some(Style::Emphasis),
-        TagEnd::Link => Some(Style::Link),
-        TagEnd::Item => Some(Style::List),
+        TagEnd::Heading(_) => Some(MarkdownStyle::Heading),
+        TagEnd::Strong => Some(MarkdownStyle::Strong),
+        TagEnd::Emphasis => Some(MarkdownStyle::Emphasis),
+        TagEnd::Link => Some(MarkdownStyle::Link),
+        TagEnd::CodeBlock => Some(MarkdownStyle::Code),
+        TagEnd::Item => Some(MarkdownStyle::List),
         _ => None,
     }
 }
 
 fn push_style_span(
     text: &str,
-    spans: &mut Vec<(Range<usize>, Style)>,
+    spans: &mut Vec<(Range<usize>, MarkdownStyle)>,
     range: Range<usize>,
-    style: Style,
+    style: MarkdownStyle,
 ) {
-    if style == Style::List {
+    if style == MarkdownStyle::List {
         spans.extend(
             list_line_ranges(text, range)
                 .into_iter()
@@ -281,11 +286,11 @@ fn is_list_line(line: &str) -> bool {
 
 fn layout_with_spans(
     text: &str,
-    spans: Vec<(Range<usize>, Style)>,
+    spans: Vec<(Range<usize>, MarkdownStyle)>,
     zoom: f32,
     font_family: &FontFamily,
     text_color: Color32,
-    dark_mode: bool,
+    palette: MarkdownPalette,
     misspelled: &[Range<usize>],
     find_matches: &[Range<usize>],
 ) -> LayoutJob {
@@ -296,7 +301,9 @@ fn layout_with_spans(
             .take(range.end.min(text.len()))
             .skip(range.start.min(text.len()))
         {
-            if current_style.is_none_or(|current: Style| style.priority() >= current.priority()) {
+            if current_style
+                .is_none_or(|current: MarkdownStyle| style.priority() >= current.priority())
+            {
                 *current_style = Some(style);
             }
         }
@@ -304,10 +311,10 @@ fn layout_with_spans(
     let misspelled_flags = range_flags(text.len(), misspelled);
     let find_flags = range_flags(text.len(), find_matches);
 
-    let format_at = |style: Option<Style>, is_misspelled: bool, is_find_match: bool| {
+    let format_at = |style: Option<MarkdownStyle>, is_misspelled: bool, is_find_match: bool| {
         let format = style.map_or_else(
             || default_format(zoom, font_family, text_color),
-            |style| style.format(zoom, font_family, text_color, dark_mode),
+            |style| palette.format(style, zoom, font_family, text_color),
         );
         let format = if is_misspelled {
             mark_misspelled(format, zoom)
@@ -367,8 +374,15 @@ fn range_flags(len: usize, ranges: &[Range<usize>]) -> Vec<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::{highlight, plain};
+    use super::{MarkdownPalette, highlight, plain};
     use egui::{Color32, FontFamily};
+
+    fn palette() -> MarkdownPalette {
+        MarkdownPalette::new(
+            Color32::from_rgb(42, 91, 166),
+            Color32::from_rgb(35, 120, 70),
+        )
+    }
 
     #[test]
     fn highlighting_covers_the_entire_document() {
@@ -377,7 +391,7 @@ mod tests {
             1.0,
             &FontFamily::Proportional,
             Color32::DARK_GRAY,
-            false,
+            palette(),
             &[],
             &[],
         );
@@ -439,7 +453,7 @@ mod tests {
             1.0,
             &FontFamily::Proportional,
             Color32::DARK_GRAY,
-            false,
+            palette(),
             &[2..12],
             &[],
         );
@@ -483,7 +497,7 @@ mod tests {
             1.0,
             &FontFamily::Proportional,
             Color32::DARK_GRAY,
-            false,
+            palette(),
             &[],
             &[],
         );
@@ -507,12 +521,20 @@ mod tests {
     #[test]
     fn markdown_highlighting_uses_theme_appropriate_colors() {
         let text = "# Heading\n`code` [link](https://example.com)\n- item";
+        let light_palette = MarkdownPalette::new(
+            Color32::from_rgb(42, 91, 166),
+            Color32::from_rgb(35, 120, 70),
+        );
+        let dark_palette = MarkdownPalette::new(
+            Color32::from_rgb(137, 190, 255),
+            Color32::from_rgb(155, 226, 170),
+        );
         let light = highlight(
             text,
             1.0,
             &FontFamily::Proportional,
             Color32::BLACK,
-            false,
+            light_palette,
             &[],
             &[],
         );
@@ -521,7 +543,7 @@ mod tests {
             1.0,
             &FontFamily::Proportional,
             Color32::WHITE,
-            true,
+            dark_palette,
             &[],
             &[],
         );
@@ -529,13 +551,13 @@ mod tests {
         let light_heading = light
             .sections
             .iter()
-            .find(|section| section.format.color == Color32::from_rgb(42, 91, 166))
-            .expect("light heading should use the dark palette");
+            .find(|section| section.format.color == light_palette.primary)
+            .expect("light heading should use the theme primary color");
         let dark_heading = dark
             .sections
             .iter()
-            .find(|section| section.format.color == Color32::from_rgb(137, 190, 255))
-            .expect("dark heading should use the light palette");
+            .find(|section| section.format.color == dark_palette.primary)
+            .expect("dark heading should use the theme primary color");
 
         assert!(light_heading.format.font_id.size == 16.0);
         assert!(dark_heading.format.font_id.size == 16.0);
@@ -549,11 +571,11 @@ mod tests {
             1.0,
             &FontFamily::Proportional,
             Color32::DARK_GRAY,
-            false,
+            palette(),
             &[],
             &[],
         );
-        let list_color = Color32::from_rgb(35, 120, 70);
+        let list_color = palette().secondary;
 
         assert!(job.sections.iter().any(|section| {
             section.byte_range.start.0 < 6 && section.format.color == list_color
