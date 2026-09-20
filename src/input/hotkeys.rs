@@ -222,13 +222,7 @@ pub fn default_bindings() -> HashMap<Action, Keybinding> {
         ),
         (
             Action::ToggleMarkdownPreview,
-            Keybinding::new(
-                Key::P,
-                Modifiers {
-                    shift: true,
-                    ..Modifiers::NONE
-                },
-            ),
+            Keybinding::new(Key::O, Modifiers::CTRL),
         ),
         (Action::NewTab, Keybinding::new(Key::N, Modifiers::CTRL)),
         (Action::CloseTab, Keybinding::new(Key::W, Modifiers::CTRL)),
@@ -392,7 +386,7 @@ mod tests {
         assert_eq!(bindings[&Action::ToggleDocumentKind].to_string(), "Ctrl+M");
         assert_eq!(
             bindings[&Action::ToggleMarkdownPreview].to_string(),
-            "Shift+P"
+            "Ctrl+O"
         );
         assert_eq!(bindings[&Action::CloseTab].to_string(), "Ctrl+W");
         assert_eq!(bindings[&Action::OpenSettings].to_string(), "Ctrl+,");

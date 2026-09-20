@@ -133,7 +133,7 @@ The `version` must be newer than the installed version. The MSI URL and manifest
 | Find in all notes         | `Ctrl+Shift+F`                  |
 | Tabs list                 | `Ctrl+P`                        |
 | MD/TXT switcher           | `Ctrl+M`                        |
-| Markdown preview          | `Shift+P`                       |
+| Markdown preview          | `Ctrl+O`                        |
 | Close open panels         | `Escape`                        |
 
 Formatting shortcuts only apply to Markdown notes. Find results can be traversed with `Enter` and `Shift+Enter`. `Escape` closes open panels and popups, including the find bar, Tabs List, Settings, confirmation dialogs, rename and shortcut-rebinding states. Shortcuts can be changed from the Keyboard tab in application settings, where `Reset to defaults` restores every keyboard shortcut.
@@ -148,7 +148,7 @@ Goatpad unifies the application menus and formatting tools into a single, height
 
 - **Actions**: Tabs List, followed by the File, Edit, and View menus on the left.
 - **Markdown options**: A heading dropdown (H1–H3), list dropdown (bulleted/numbered), bold, italic, strikethrough, link, table, and clear-formatting controls in the center. These tools are rendered only when the active note is Markdown (`MD`); for plain-text notes (`TXT`), the region collapses without changing the bar's height. On constrained window widths, tools collapse cleanly into a "Format" overflow menu.
-- **Document switcher**: An immediate `MD`/`TXT` switch at the right edge of the bar (also switchable via the `View` menu or `Ctrl+M`). Markdown notes additionally show a preview icon beside this switcher. Activating it renders the note across the full content view and locks text editing; toggle it with `Shift+P`.
+- **Document switcher**: An immediate `MD`/`TXT` switch at the right edge of the bar (also switchable via the `View` menu or `Ctrl+M`). Markdown notes additionally show a preview icon beside this switcher. Activating it renders the note across the full content view and locks text editing; toggle it with `Ctrl+O`.
 
 ## Settings & Themes
 
