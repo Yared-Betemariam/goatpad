@@ -15,7 +15,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 - A searchable Tabs List for reopening closed notes and explicitly deleting unwanted notes; opening it focuses the search field automatically, selects the first visible note, and supports Up/Down navigation plus Enter to open
 - Inline find for the active note (`Ctrl+F`) or the entire local note collection (`Ctrl+Shift+F`), with yellow match highlighting and keyboard result navigation
 - The title-bar tabs strip automatically scrolls to keep the active tab visible whenever it changes, even when many tabs overflow the visible area
-- Automatic note titles derived from the first line (up to 20 characters), with custom titles via double-click on a tab (renamed in place)
+- Automatic note titles derived from the first line (up to 20 characters); Markdown titles omit formatting markers, while plain-text titles preserve the original line
 - Import and export of all notes through portable JSON backups
 - Live Markdown highlighting, a read-only rendered Markdown preview, and common formatting actions, available from the action bar, the Edit menu, or keyboard shortcuts
 - A Notepad-style status bar with smaller, reduced-opacity footer text, cursor position, character count, document type, zoom control, line-ending, and encoding; content zoom and Ctrl-based app zoom persist between launches
@@ -173,7 +173,7 @@ Amharic and other Ethiopic-script text is supported independently of the selecte
 
 ## Note titles
 
-New notes are named `Untitled` until you type on the first line. Goatpad then uses up to the first 20 characters of that line as the note title. Double-click a tab to rename it in place; press `Enter` to confirm or `Escape` to cancel. Clear the custom title to return to automatic naming.
+New notes are named `Untitled` until you type on the first line. Goatpad then uses up to the first 20 characters of that line as the note title. For Markdown notes, formatting such as headings, lists, emphasis, links, and inline code is omitted from the automatic title; plain-text notes keep the line unchanged. Double-click a tab to rename it in place; press `Enter` to confirm or `Escape` to cancel. Clear the custom title to return to automatic naming.
 
 ## Import and export
 

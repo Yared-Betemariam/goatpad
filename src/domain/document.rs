@@ -1,3 +1,4 @@
+use pulldown_cmark::{Event, Options, Parser};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -50,7 +51,7 @@ impl Document {
         if self.title_is_custom {
             return false;
         }
-        let title = automatic_title(&self.content);
+        let title = automatic_title(&self.content, self.kind);
         if self.title == title {
             return false;
         }
@@ -62,7 +63,7 @@ impl Document {
         let title = title.trim();
         if title.is_empty() {
             self.title_is_custom = false;
-            self.title = automatic_title(&self.content);
+            self.title = automatic_title(&self.content, self.kind);
         } else {
             self.title_is_custom = true;
             self.title = title.to_owned();
@@ -79,8 +80,12 @@ pub fn unix_timestamp_millis() -> u64 {
         .unwrap_or(u64::MAX)
 }
 
-pub fn automatic_title(content: &str) -> String {
+pub fn automatic_title(content: &str, kind: DocKind) -> String {
     let first_line = content.lines().next().unwrap_or_default().trim();
+    let first_line = match kind {
+        DocKind::Md => markdown_title_text(first_line),
+        DocKind::Txt => first_line.to_owned(),
+    };
     if first_line.is_empty() {
         return UNTITLED_TITLE.to_owned();
     }
@@ -95,6 +100,18 @@ pub fn automatic_title(content: &str) -> String {
         title.push('…');
     }
     title
+}
+
+fn markdown_title_text(first_line: &str) -> String {
+    Parser::new_ext(first_line, Options::all())
+        .filter_map(|event| match event {
+            Event::Text(text) | Event::Code(text) => Some(text.into_string()),
+            Event::SoftBreak | Event::HardBreak => Some(" ".to_owned()),
+            _ => None,
+        })
+        .collect::<String>()
+        .trim()
+        .to_owned()
 }
 
 impl Default for Document {
@@ -114,15 +131,35 @@ mod tests {
 
     #[test]
     fn automatic_title_uses_the_trimmed_first_line() {
-        assert_eq!(automatic_title("  Shopping list  \nMilk"), "Shopping list");
-        assert_eq!(automatic_title("\nSecond line"), "Untitled");
+        assert_eq!(
+            automatic_title("  Shopping list  \nMilk", DocKind::Txt),
+            "Shopping list"
+        );
+        assert_eq!(automatic_title("\nSecond line", DocKind::Txt), "Untitled");
+    }
+
+    #[test]
+    fn automatic_markdown_title_omits_formatting_markers() {
+        assert_eq!(
+            automatic_title("# **Shopping** [list](https://example.com)", DocKind::Md),
+            "Shopping list"
+        );
+        assert_eq!(automatic_title("- `Milk`", DocKind::Md), "Milk");
+    }
+
+    #[test]
+    fn automatic_plain_text_title_keeps_literal_markers() {
+        assert_eq!(
+            automatic_title("# Shopping list", DocKind::Txt),
+            "# Shopping list"
+        );
     }
 
     #[test]
     fn automatic_title_is_unicode_safe_and_truncated() {
         let content = "🦀".repeat(40);
         assert_eq!(
-            automatic_title(&content),
+            automatic_title(&content, DocKind::Txt),
             format!("{}…", "🦀".repeat(AUTO_TITLE_MAX_CHARS))
         );
     }
@@ -131,7 +168,7 @@ mod tests {
     fn automatic_title_trims_trailing_whitespace_on_truncation() {
         // "This is a long test line" has 24 chars. First 20 is "This is a long test "
         assert_eq!(
-            automatic_title("This is a long test line"),
+            automatic_title("This is a long test line", DocKind::Txt),
             "This is a long test…"
         );
     }

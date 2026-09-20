@@ -301,9 +301,12 @@ impl Workspace {
         let old_path = self.document_path(id, old_kind);
         let new_path = self.document_path(id, kind);
         fs::rename(&old_path, &new_path)?;
+        let old_title = self.documents[index].title.clone();
         self.documents[index].kind = kind;
+        self.documents[index].refresh_automatic_title();
         if let Err(error) = self.save_index() {
             self.documents[index].kind = old_kind;
+            self.documents[index].title = old_title;
             let _ = fs::rename(&new_path, &old_path);
             return Err(error);
         }
