@@ -2,6 +2,7 @@ use super::*;
 
 impl GoatpadApp {
     pub(in crate::app) fn open_find(&mut self, scope: FindScope) {
+        self.clear_multi_cursors();
         match self.find.as_mut() {
             Some(find) => {
                 find.scope = scope;
@@ -67,6 +68,7 @@ impl GoatpadApp {
     }
 
     pub(in crate::app) fn navigate_find(&mut self, ctx: &egui::Context, forward: bool) {
+        self.clear_multi_cursors();
         let matches = self.current_find_matches();
         if matches.is_empty() {
             if let Some(find) = self.find.as_mut() {

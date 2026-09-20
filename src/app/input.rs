@@ -27,6 +27,7 @@ impl GoatpadApp {
             || self.rebinding.is_some()
             || self.renaming_document.is_some()
             || self.spellcheck_menu.is_some()
+            || !self.multi_cursor_offsets.is_empty()
             || egui::Popup::is_any_open(ctx);
         if !has_open_target
             || !ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
@@ -45,6 +46,7 @@ impl GoatpadApp {
         self.theme_delete_confirm = None;
         self.rebinding = None;
         self.spellcheck_menu = None;
+        self.clear_multi_cursors();
         if self.renaming_document.is_some() {
             self.cancel_rename();
         }

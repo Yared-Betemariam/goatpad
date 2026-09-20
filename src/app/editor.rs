@@ -1,6 +1,10 @@
 use super::*;
 
 impl GoatpadApp {
+    pub(in crate::app) fn clear_multi_cursors(&mut self) {
+        self.multi_cursor_offsets.clear();
+    }
+
     pub(in crate::app) fn editor_id(&self) -> egui::Id {
         egui::Id::new((
             "editor",
@@ -24,6 +28,59 @@ impl GoatpadApp {
         }
     }
 
+    pub(in crate::app) fn editor_cursor_range(
+        &self,
+        ctx: &egui::Context,
+    ) -> egui::text::CCursorRange {
+        egui::widgets::text_edit::TextEditState::load(ctx, self.editor_id())
+            .and_then(|state| state.cursor.char_range())
+            .unwrap_or_else(|| {
+                egui::text::CCursorRange::one(egui::text::CCursor::new(self.cursor_offset))
+            })
+    }
+
+    /// Mirrors the primary egui edit at every secondary cursor and restores
+    /// the primary cursor after those extra edits have shifted the document.
+    pub(in crate::app) fn mirror_multi_cursor_edit(
+        &mut self,
+        ctx: &egui::Context,
+        editor_id: egui::Id,
+        before_content: &str,
+        before_cursor: egui::text::CCursorRange,
+        primary_cursor_after: usize,
+    ) {
+        let Some(change) = multicursor::detect_change_at(
+            before_content,
+            &self.workspace.active_document().content,
+            before_cursor,
+            primary_cursor_after,
+        ) else {
+            return;
+        };
+
+        let (offsets, primary_cursor_after_secondary_edits) = multicursor::apply_secondary_edits(
+            &mut self.workspace.active_document_mut().content,
+            &change,
+            before_cursor,
+            primary_cursor_after,
+            &self.multi_cursor_offsets,
+        );
+        self.multi_cursor_offsets = offsets;
+
+        let final_cursor = egui::text::CCursorRange::one(egui::text::CCursor::new(
+            primary_cursor_after_secondary_edits,
+        ));
+        let final_content = self.workspace.active_document().content.clone();
+        let mut state =
+            egui::widgets::text_edit::TextEditState::load(ctx, editor_id).unwrap_or_default();
+        state.cursor.set_char_range(Some(final_cursor));
+        let mut undoer = state.undoer();
+        undoer.add_undo(&(final_cursor, final_content));
+        state.set_undoer(undoer);
+        state.store(ctx, editor_id);
+        self.cursor_offset = primary_cursor_after_secondary_edits;
+    }
+
     /// Applies a selection-transforming edit (formatting, list toggles, links, tables, …)
     /// to the active document and restores the cursor/selection afterwards.
     fn apply_text_transform(
@@ -31,6 +88,7 @@ impl GoatpadApp {
         ctx: &egui::Context,
         transform: impl FnOnce(&mut String, usize, usize) -> egui::text::CCursorRange,
     ) {
+        self.clear_multi_cursors();
         let (start, end) = self.selection_range(ctx);
         let editor_id = self.editor_id();
         let new_range = transform(
@@ -149,6 +207,7 @@ impl GoatpadApp {
         range: Range<usize>,
         replacement: &str,
     ) {
+        self.clear_multi_cursors();
         let editor_id = self.editor_id();
         let document = self.workspace.active_document_mut();
         if range.end > document.content.len() {

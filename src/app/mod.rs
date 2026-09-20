@@ -19,7 +19,9 @@ use crate::{
         },
     },
     domain::{document::DocKind, workspace::Workspace},
-    editor::{find as editor_find, formatting, highlighting, spellcheck::SpellChecker},
+    editor::{
+        find as editor_find, formatting, highlighting, multicursor, spellcheck::SpellChecker,
+    },
     input::hotkeys::{self, Action, Keybinding},
     services::{
         paths::AppPaths,
@@ -71,6 +73,7 @@ pub(crate) struct GoatpadApp {
     paths: AppPaths,
     session: Session,
     cursor_offset: usize,
+    multi_cursor_offsets: Vec<usize>,
     scroll_offset: f32,
     restore_cursor: bool,
     pending_find_scroll: Option<(Uuid, usize)>,
@@ -184,6 +187,7 @@ impl GoatpadApp {
             paths,
             session,
             cursor_offset: state.cursor_offset,
+            multi_cursor_offsets: Vec::new(),
             scroll_offset: state.scroll_offset,
             restore_cursor: true,
             pending_find_scroll: None,

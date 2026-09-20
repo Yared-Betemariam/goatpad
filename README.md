@@ -14,6 +14,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 - A unified action bar combining File/Edit/View menus, contextual Markdown formatting tools (headings, lists, bold, italic, strikethrough, link, table, clear formatting), and the note type switcher
 - A searchable Tabs List for reopening closed notes and explicitly deleting unwanted notes; opening it focuses the search field automatically, selects the first visible note, and supports Up/Down navigation plus Enter to open
 - Inline find for the active note (`Ctrl+F`) or the entire local note collection (`Ctrl+Shift+F`), with yellow match highlighting and keyboard result navigation
+- VS Code-style multiline editing: hold `Alt` and click to add secondary carets, then type, paste, indent, or delete at every caret
 - The title-bar tabs strip automatically scrolls to keep the active tab visible whenever it changes, even when many tabs overflow the visible area
 - Automatic note titles derived from the first line (up to 20 characters); Markdown titles omit formatting markers, while plain-text titles preserve the original line
 - Import and export of all notes through portable JSON backups
@@ -141,6 +142,8 @@ Formatting shortcuts only apply to Markdown notes. Find results can be traversed
 When the Tabs List is open, the first visible note is selected automatically. Typing a search selects its first result; use `Up` and `Down` to move between results and `Enter` to open the selected note.
 
 While editing a note, `Tab` inserts an indentation tab; `Ctrl+Tab` and `Ctrl+Shift+Tab` continue to switch between tabs.
+
+Hold `Alt` and click in the editor to add carets for multiline editing. Text insertion, paste, Enter, Tab, Backspace, and Delete are applied at every caret. A normal click or `Escape` returns to a single caret.
 
 ## The action bar
 

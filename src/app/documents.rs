@@ -16,6 +16,7 @@ impl GoatpadApp {
     }
 
     pub(in crate::app) fn toggle_active_document_kind(&mut self) {
+        self.clear_multi_cursors();
         let Some((document_id, current_kind)) = self.session.active_tab.and_then(|id| {
             self.workspace
                 .document(id)
@@ -117,6 +118,7 @@ impl GoatpadApp {
     }
 
     pub(in crate::app) fn activate_tab(&mut self, id: Uuid) {
+        self.clear_multi_cursors();
         if self.workspace.document(id).is_none() {
             return;
         }
@@ -143,6 +145,7 @@ impl GoatpadApp {
     }
 
     pub(in crate::app) fn close_tab(&mut self, id: Uuid) {
+        self.clear_multi_cursors();
         if !self.session.open_tabs.contains(&id) {
             return;
         }
@@ -196,6 +199,7 @@ impl GoatpadApp {
     }
 
     pub(in crate::app) fn create_tab(&mut self) {
+        self.clear_multi_cursors();
         if self.renaming_document.is_some() {
             self.finish_rename();
         }

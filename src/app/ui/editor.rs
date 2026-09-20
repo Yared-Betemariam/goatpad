@@ -66,6 +66,23 @@ impl GoatpadApp {
                     return;
                 }
                 let editor_id = self.editor_id();
+                if self.restore_cursor {
+                    let offset = self
+                        .cursor_offset
+                        .min(self.workspace.active_document().content.chars().count());
+                    let mut state = egui::widgets::text_edit::TextEditState::load(ctx, editor_id)
+                        .unwrap_or_default();
+                    state
+                        .cursor
+                        .set_char_range(Some(egui::text::CCursorRange::one(
+                            egui::text::CCursor::new(offset),
+                        )));
+                    state.store(ctx, editor_id);
+                    self.restore_cursor = false;
+                }
+                let before_content = (!self.multi_cursor_offsets.is_empty())
+                    .then(|| self.workspace.active_document().content.clone());
+                let before_cursor = self.editor_cursor_range(ctx);
                 let misspelled_ranges = self.spellcheck_ranges(document_id);
                 let find_ranges = self.visible_find_ranges(document_id);
                 let layouter_misspelled = misspelled_ranges.clone();
@@ -134,26 +151,120 @@ impl GoatpadApp {
                     });
                 self.scroll_offset = output.state.offset.y;
                 let editor = output.inner;
-                if self.restore_cursor {
-                    let offset = self
-                        .cursor_offset
-                        .min(self.workspace.active_document().content.chars().count());
-                    let mut state =
-                        egui::widgets::text_edit::TextEditState::load(ctx, editor.response.id)
-                            .unwrap_or_default();
-                    state
-                        .cursor
-                        .set_char_range(Some(egui::text::CCursorRange::one(
-                            egui::text::CCursor::new(offset),
-                        )));
-                    state.store(ctx, editor.response.id);
-                    self.restore_cursor = false;
-                }
+                let primary_cursor_after = editor.cursor_range.map(|range| range.primary.index.0);
+                let clicked_cursor = editor.response.interact_pointer_pos().map(|pos| {
+                    editor
+                        .galley
+                        .cursor_from_pos(pos - editor.galley_pos)
+                        .index
+                        .0
+                });
+                let alt_click = editor.response.clicked() && ctx.input(|input| input.modifiers.alt);
+                let history_event = ctx.input(|input| {
+                    input.events.iter().any(|event| {
+                        matches!(
+                            event,
+                            egui::Event::Key {
+                                key: egui::Key::Z | egui::Key::Y,
+                                pressed: true,
+                                modifiers,
+                                ..
+                            } if modifiers.command
+                        )
+                    })
+                });
                 if let Some(cursor_range) = editor.cursor_range {
                     self.cursor_offset = cursor_range.primary.index.0;
                 }
+                if alt_click {
+                    if let Some(clicked_offset) = clicked_cursor.or(primary_cursor_after) {
+                        self.multi_cursor_offsets
+                            .retain(|offset| *offset != clicked_offset);
+                        self.multi_cursor_offsets.push(clicked_offset);
+                        self.multi_cursor_offsets.sort_unstable();
+                        self.multi_cursor_offsets.dedup();
+                    }
+                } else if editor.response.clicked() {
+                    self.clear_multi_cursors();
+                } else if editor.response.changed() {
+                    if history_event {
+                        // egui's undo stack restores the complete pre-edit
+                        // string, including edits mirrored at secondary carets.
+                        self.clear_multi_cursors();
+                    } else if let (Some(before_content), Some(primary_cursor_after)) =
+                        (before_content.as_deref(), primary_cursor_after)
+                    {
+                        self.mirror_multi_cursor_edit(
+                            ctx,
+                            editor.response.id,
+                            before_content,
+                            before_cursor,
+                            primary_cursor_after,
+                        );
+                    }
+                } else if !self.multi_cursor_offsets.is_empty()
+                    && editor
+                        .cursor_range
+                        .is_some_and(|range| range != before_cursor)
+                {
+                    let navigation = ctx.input(|input| {
+                        input.events.iter().rev().find_map(|event| {
+                            if let egui::Event::Key {
+                                key,
+                                pressed: true,
+                                modifiers,
+                                ..
+                            } = event
+                            {
+                                Some((*key, *modifiers))
+                            } else {
+                                None
+                            }
+                        })
+                    });
+                    let moved = navigation.zip(before_content.as_deref()).and_then(
+                        |((key, modifiers), content)| {
+                            primary_cursor_after.and_then(|primary_cursor_after| {
+                                multicursor::move_secondary_offsets(
+                                    content,
+                                    before_cursor,
+                                    primary_cursor_after,
+                                    &self.multi_cursor_offsets,
+                                    key,
+                                    modifiers,
+                                )
+                            })
+                        },
+                    );
+                    if let Some(moved) = moved {
+                        self.multi_cursor_offsets = moved;
+                    } else {
+                        self.clear_multi_cursors();
+                    }
+                }
                 if editor.response.changed() {
                     self.mark_active_document_edited();
+                }
+                if !self.multi_cursor_offsets.is_empty() && editor.response.has_focus() {
+                    let painter = ui.painter_at(editor.text_clip_rect);
+                    let cursor_color = ui.visuals().selection.stroke.color;
+                    let max_offset = editor.galley.job.text.chars().count();
+                    for offset in &self.multi_cursor_offsets {
+                        let cursor = editor
+                            .galley
+                            .pos_from_cursor(egui::text::CCursor::new((*offset).min(max_offset)));
+                        let cursor = cursor.translate(
+                            editor.galley_pos.to_vec2()
+                                - egui::vec2(editor.galley.rect.left(), 0.0),
+                        );
+                        painter.line_segment(
+                            [
+                                egui::pos2(cursor.left(), cursor.top()),
+                                egui::pos2(cursor.left(), cursor.bottom()),
+                            ],
+                            egui::Stroke::new(1.25, cursor_color),
+                        );
+                    }
                 }
                 if editor.response.secondary_clicked() {
                     let clicked_target = editor.response.interact_pointer_pos().and_then(|pos| {
