@@ -30,16 +30,37 @@ impl GoatpadApp {
                 .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
                 .collapsible(false)
                 .resizable(true)
-                .default_width(420.0)
+                .default_size(egui::vec2(560.0, 640.0))
+                .min_size(egui::vec2(500.0, 480.0))
                 .show(ctx, |ui| {
-                    let search_response = ui.add(
-                        egui::TextEdit::singleline(&mut self.tabs_list_search)
-                            .hint_text(format!(
-                                "{} Search notes…",
-                                egui_phosphor::regular::MAGNIFYING_GLASS
-                            ))
-                            .desired_width(f32::INFINITY),
-                    );
+                    let search_response = ui
+                        .horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            let button_width = 28.0;
+                            let search_width =
+                                (ui.available_width() - button_width - 6.0).max(120.0);
+                            let response = ui.add_sized(
+                                [search_width, 28.0],
+                                egui::TextEdit::singleline(&mut self.tabs_list_search).hint_text(
+                                    format!(
+                                        "{} Search notes…",
+                                        egui_phosphor::regular::MAGNIFYING_GLASS
+                                    ),
+                                ),
+                            );
+                            if ui
+                                .add_sized(
+                                    [button_width, 28.0],
+                                    egui::Button::new(egui_phosphor::regular::FOLDER_PLUS),
+                                )
+                                .on_hover_text("Create a folder at the top level")
+                                .clicked()
+                            {
+                                self.begin_folder_create(None);
+                            }
+                            response
+                        })
+                        .inner;
                     if self.focus_tabs_list_search {
                         search_response.request_focus();
                         self.focus_tabs_list_search = false;
@@ -62,21 +83,8 @@ impl GoatpadApp {
                         });
                     }
 
-                    ui.horizontal(|ui| {
-                        if ui
-                            .button(format!(
-                                "{} New folder",
-                                egui_phosphor::regular::FOLDER_PLUS
-                            ))
-                            .on_hover_text("Create a folder at the top level")
-                            .clicked()
-                        {
-                            self.begin_folder_create(None);
-                        }
-                        ui.label("Drag notes or folders to organize them");
-                    });
                     self.show_folder_editor(ui);
-                    ui.separator();
+                    ui.add_space(6.0);
 
                     if !visible_note_ids.is_empty() {
                         let moved_down = ui.input_mut(|input| {
@@ -114,9 +122,19 @@ impl GoatpadApp {
 
                     self.workspace_drop_target = None;
                     egui::ScrollArea::vertical()
-                        .max_height(460.0)
+                        .max_height(560.0)
                         .show(ui, |ui| {
                             let mut actions = TreeActions::default();
+
+                            ui.label(egui::RichText::new("Opened tabs").strong());
+                            ui.add_space(4.0);
+                            self.show_opened_tabs(ui, &query, &mut actions);
+
+                            ui.add_space(10.0);
+                            ui.separator();
+                            ui.add_space(8.0);
+                            ui.label(egui::RichText::new("All tabs").strong());
+                            ui.add_space(4.0);
                             self.show_workspace_tree(
                                 ui,
                                 None,
@@ -228,6 +246,56 @@ impl GoatpadApp {
         }
     }
 
+    fn show_opened_tabs(&mut self, ui: &mut egui::Ui, query: &str, actions: &mut TreeActions) {
+        let open_tabs = self.session.open_tabs.clone();
+        for id in open_tabs {
+            let Some(document) = self.workspace.document(id) else {
+                continue;
+            };
+            if !query.is_empty() && !document.title.to_lowercase().contains(query) {
+                continue;
+            }
+
+            let title = document.title.clone();
+            let kind = document.kind;
+            let selected = self.tabs_list_selected == Some(id);
+            let mut row_clicked = false;
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), 28.0),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    if ui
+                        .add_sized(
+                            [28.0, 24.0],
+                            egui::Button::new(egui_phosphor::regular::TRASH),
+                        )
+                        .on_hover_text("Delete note permanently")
+                        .clicked()
+                    {
+                        actions.delete_note = Some(id);
+                    }
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        row_clicked = ui
+                            .selectable_label(
+                                selected,
+                                format!(
+                                    "{}  {}",
+                                    title,
+                                    if kind == DocKind::Md { "[MD]" } else { "[TXT]" }
+                                ),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked();
+                    });
+                },
+            );
+            if row_clicked {
+                self.tabs_list_selected = Some(id);
+                actions.open_note = Some(id);
+            }
+        }
+    }
+
     fn show_workspace_tree(
         &mut self,
         ui: &mut egui::Ui,
@@ -254,60 +322,67 @@ impl GoatpadApp {
                     let mut row_rect = None;
                     let mut drop_placement = None;
                     ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
                         ui.add_space(depth as f32 * 18.0);
-                        let arrow = if expanded || !query.is_empty() {
-                            "▾"
-                        } else {
-                            "▸"
-                        };
-                        if ui
-                            .small_button(arrow)
-                            .on_hover_text(if expanded {
-                                "Collapse folder"
-                            } else {
-                                "Expand folder"
-                            })
-                            .clicked()
-                        {
-                            if expanded {
-                                self.expanded_folders.remove(&id);
-                            } else {
-                                self.expanded_folders.insert(id);
-                            }
-                        }
-                        let row = ui
-                            .selectable_label(
-                                false,
-                                format!("{}  {}", egui_phosphor::regular::FOLDER, title),
-                            )
-                            .interact(egui::Sense::click_and_drag())
-                            .on_hover_cursor(egui::CursorIcon::PointingHand);
-                        row_rect = Some(row.rect);
-                        row_clicked = row.clicked();
-                        row_dragged = row.drag_started_by(egui::PointerButton::Primary);
-                        drop_placement = self.drop_placement_for(row, item);
-                        if ui
-                            .small_button("+")
-                            .on_hover_text("Create a subfolder")
-                            .clicked()
-                        {
-                            self.begin_folder_create(Some(id));
-                            self.expanded_folders.insert(id);
-                        }
-                        if ui
-                            .small_button(egui_phosphor::regular::PENCIL)
-                            .on_hover_text("Rename folder")
-                            .clicked()
-                        {
-                            self.begin_folder_rename(id, &title);
-                        }
-                        if ui
-                            .small_button(egui_phosphor::regular::TRASH)
-                            .on_hover_text("Delete folder and move its contents up")
-                            .clicked()
-                        {
-                            actions.delete_folder = Some(id);
-                        }
+
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(ui.available_width(), 28.0),
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                if ui
+                                    .add_sized(
+                                        [28.0, 24.0],
+                                        egui::Button::new(egui_phosphor::regular::TRASH),
+                                    )
+                                    .on_hover_text("Delete folder and move its contents up")
+                                    .clicked()
+                                {
+                                    actions.delete_folder = Some(id);
+                                }
+                                if ui
+                                    .add_sized(
+                                        [28.0, 24.0],
+                                        egui::Button::new(egui_phosphor::regular::PENCIL),
+                                    )
+                                    .on_hover_text("Rename folder")
+                                    .clicked()
+                                {
+                                    self.begin_folder_rename(id, &title);
+                                }
+                                if ui
+                                    .add_sized(
+                                        [28.0, 24.0],
+                                        egui::Button::new(egui_phosphor::regular::PLUS),
+                                    )
+                                    .on_hover_text("Create a subfolder")
+                                    .clicked()
+                                {
+                                    self.begin_folder_create(Some(id));
+                                    self.expanded_folders.insert(id);
+                                }
+                                ui.with_layout(
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| {
+                                        let row = ui
+                                            .selectable_label(
+                                                false,
+                                                format!(
+                                                    "{}  {}",
+                                                    egui_phosphor::regular::FOLDER,
+                                                    title
+                                                ),
+                                            )
+                                            .interact(egui::Sense::click_and_drag())
+                                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                        row_rect = Some(row.rect);
+                                        row_clicked = row.clicked();
+                                        row_dragged =
+                                            row.drag_started_by(egui::PointerButton::Primary);
+                                        drop_placement = self.drop_placement_for(row, item);
+                                    },
+                                );
+                            },
+                        );
                     });
                     if row_clicked {
                         if expanded {
@@ -348,41 +423,57 @@ impl GoatpadApp {
                         continue;
                     };
                     let title = document.title.clone();
-                    let is_open = self.session.open_tabs.contains(&id);
                     let selected = self.tabs_list_selected == Some(id);
                     let mut row_clicked = false;
                     let mut row_dragged = false;
                     let mut row_rect = None;
                     let mut drop_placement = None;
                     ui.horizontal(|ui| {
-                        ui.add_space(depth as f32 * 18.0 + 22.0);
-                        let row = ui
-                            .selectable_label(
-                                selected,
-                                format!(
-                                    "{} {} {}",
-                                    if is_open { "●" } else { "○" },
-                                    title,
-                                    if document.kind == DocKind::Md {
-                                        "[MD]"
-                                    } else {
-                                        "[TXT]"
-                                    }
-                                ),
-                            )
-                            .interact(egui::Sense::click_and_drag())
-                            .on_hover_cursor(egui::CursorIcon::PointingHand);
-                        row_rect = Some(row.rect);
-                        row_clicked = row.clicked();
-                        row_dragged = row.drag_started_by(egui::PointerButton::Primary);
-                        drop_placement = self.drop_placement_for(row, item);
-                        if ui
-                            .small_button(egui_phosphor::regular::TRASH)
-                            .on_hover_text("Delete note permanently")
-                            .clicked()
-                        {
-                            actions.delete_note = Some(id);
-                        }
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        let document_indent =
+                            depth as f32 * 18.0 + if depth > 0 { 28.0 } else { 0.0 };
+                        ui.add_space(document_indent);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(ui.available_width(), 28.0),
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                if ui
+                                    .add_sized(
+                                        [28.0, 24.0],
+                                        egui::Button::new(egui_phosphor::regular::TRASH),
+                                    )
+                                    .on_hover_text("Delete note permanently")
+                                    .clicked()
+                                {
+                                    actions.delete_note = Some(id);
+                                }
+                                ui.with_layout(
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| {
+                                        let row = ui
+                                            .selectable_label(
+                                                selected,
+                                                format!(
+                                                    "{}  {}",
+                                                    title,
+                                                    if document.kind == DocKind::Md {
+                                                        "[MD]"
+                                                    } else {
+                                                        "[TXT]"
+                                                    }
+                                                ),
+                                            )
+                                            .interact(egui::Sense::click_and_drag())
+                                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                        row_rect = Some(row.rect);
+                                        row_clicked = row.clicked();
+                                        row_dragged =
+                                            row.drag_started_by(egui::PointerButton::Primary);
+                                        drop_placement = self.drop_placement_for(row, item);
+                                    },
+                                );
+                            },
+                        );
                     });
                     if row_clicked {
                         self.tabs_list_selected = Some(id);
