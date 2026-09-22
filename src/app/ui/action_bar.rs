@@ -280,7 +280,6 @@ impl GoatpadApp {
 
                     // Region 2: Markdown options (only rendered when active note is MD)
                     if active_is_markdown {
-                        ui.separator();
                         let available_width = ui.available_width();
                         if available_width < COMPACT_ACTION_BAR_WIDTH {
                             ui.menu_button("Format", |ui| {
@@ -463,7 +462,6 @@ impl GoatpadApp {
                                     ui.close();
                                 }
                             });
-                            ui.separator();
                             if ui
                                 .button(egui_phosphor::regular::TEXT_B)
                                 .on_hover_text("Bold (Ctrl+B)")
@@ -485,7 +483,6 @@ impl GoatpadApp {
                             {
                                 self.apply_formatting(&ctx, Action::ToggleStrikethrough);
                             }
-                            ui.separator();
                             if ui
                                 .button(egui_phosphor::regular::LINK)
                                 .on_hover_text("Link (Ctrl+K)")
@@ -500,7 +497,6 @@ impl GoatpadApp {
                             {
                                 self.apply_table_insert(&ctx);
                             }
-                            ui.separator();
                             if ui
                                 .button(egui_phosphor::regular::ERASER)
                                 .on_hover_text("Clear formatting")
