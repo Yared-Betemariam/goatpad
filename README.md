@@ -13,6 +13,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 - Markdown and plain-text editing in persistent tabs, with new notes defaulting to plain text (`TXT`) and switchable per note (`MD`/`TXT`)
 - A unified action bar combining File/Edit/View menus, contextual Markdown formatting tools (headings, lists, bold, italic, strikethrough, link, table, clear formatting), and the note type switcher
 - A spacious, searchable Tabs List with separate Opened tabs and All tabs sections plus unlimited nested folders; notes and folders can be created, renamed, deleted, dragged between folders, and reordered by dropping above or below another item
+- Folder open and closed state in the Tabs List persists between launches
 - Inline find for the active note (`Ctrl+F`) or the entire local note collection (`Ctrl+Shift+F`), with yellow match highlighting and keyboard result navigation
 - VS Code-style multiline editing: hold `Alt` and click to add secondary carets, then type, paste, indent, or delete at every caret
 - The title-bar tabs strip automatically scrolls to keep the active tab visible whenever it changes, even when many tabs overflow the visible area

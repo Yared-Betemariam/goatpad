@@ -129,6 +129,18 @@ impl GoatpadApp {
 
     pub(in crate::app) fn save_session(&mut self) {
         self.capture_active_tab_state();
+        let folder_ids = self
+            .workspace
+            .folders
+            .iter()
+            .map(|folder| folder.id)
+            .collect::<HashSet<_>>();
+        self.session.expanded_folders = self
+            .expanded_folders
+            .iter()
+            .filter(|id| folder_ids.contains(id))
+            .copied()
+            .collect();
         if let Err(error) = self.session.save(&self.paths) {
             self.report_error(format!("Could not save session: {error}"));
         } else {

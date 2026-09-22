@@ -112,8 +112,12 @@ pub struct Session {
     pub tab_state: HashMap<Uuid, TabState>,
     #[serde(default)]
     pub markdown_previews: HashSet<Uuid>,
+    #[serde(default)]
+    pub expanded_folders: HashSet<Uuid>,
     #[serde(skip)]
     open_tabs_missing: bool,
+    #[serde(skip)]
+    expanded_folders_missing: bool,
 }
 
 impl Default for Session {
@@ -124,7 +128,9 @@ impl Default for Session {
             window: None,
             tab_state: HashMap::new(),
             markdown_previews: HashSet::new(),
+            expanded_folders: HashSet::new(),
             open_tabs_missing: true,
+            expanded_folders_missing: true,
         }
     }
 }
@@ -136,16 +142,17 @@ impl Session {
             return Ok(Self::default());
         }
         let data = fs::read(path)?;
-        let open_tabs_missing = serde_json::from_slice::<serde_json::Value>(&data)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
-            .get("open_tabs")
-            .is_none();
+        let value = serde_json::from_slice::<serde_json::Value>(&data)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        let open_tabs_missing = value.get("open_tabs").is_none();
+        let expanded_folders_missing = value.get("expanded_folders").is_none();
         let mut session: Self = serde_json::from_slice(&data)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         if session.window.is_some_and(|window| !window.is_valid()) {
             session.window = None;
         }
         session.open_tabs_missing = open_tabs_missing;
+        session.expanded_folders_missing = expanded_folders_missing;
         Ok(session)
     }
 
@@ -182,6 +189,15 @@ impl Session {
         }
         self.tab_state.retain(|id, _| note_ids.contains(id));
         self.markdown_previews.retain(|id| note_ids.contains(id));
+    }
+
+    pub fn prepare_expanded_folders(&mut self, folder_ids: &[Uuid]) {
+        if self.expanded_folders_missing {
+            self.expanded_folders = folder_ids.iter().copied().collect();
+        } else {
+            self.expanded_folders.retain(|id| folder_ids.contains(id));
+        }
+        self.expanded_folders_missing = false;
     }
 
     pub fn toggle_markdown_preview(&mut self, id: Uuid) -> bool {
@@ -269,7 +285,7 @@ mod tests {
     use super::{Session, WindowGeom};
     use crate::services::paths::AppPaths;
     use egui::{Rect, pos2, vec2};
-    use std::fs;
+    use std::{collections::HashSet, fs};
     use uuid::Uuid;
 
     #[test]
@@ -351,6 +367,35 @@ mod tests {
         assert!(reloaded.open_tabs.is_empty());
         assert_eq!(reloaded.active_tab, None);
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn expanded_folder_state_round_trips_and_discards_missing_folders() {
+        let directory =
+            std::env::temp_dir().join(format!("goatpad-folder-session-test-{}", Uuid::new_v4()));
+        let paths = AppPaths::for_test(directory.clone()).unwrap();
+        let expanded_id = Uuid::new_v4();
+        let missing_id = Uuid::new_v4();
+        let mut session = Session::default();
+        session.expanded_folders = HashSet::from([expanded_id, missing_id]);
+        session.prepare_expanded_folders(&[expanded_id, missing_id]);
+        session.save(&paths).unwrap();
+
+        let mut reloaded = Session::load(&paths).unwrap();
+        reloaded.prepare_expanded_folders(&[expanded_id]);
+
+        assert_eq!(reloaded.expanded_folders, HashSet::from([expanded_id]));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn sessions_without_folder_state_expand_all_folders_on_migration() {
+        let ids = [Uuid::new_v4(), Uuid::new_v4()];
+        let mut session = Session::default();
+
+        session.prepare_expanded_folders(&ids);
+
+        assert_eq!(session.expanded_folders, HashSet::from(ids));
     }
 
     #[test]

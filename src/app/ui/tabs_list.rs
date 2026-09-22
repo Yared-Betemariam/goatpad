@@ -192,6 +192,7 @@ impl GoatpadApp {
             match self.workspace.delete_folder(id) {
                 Ok(true) => {
                     self.expanded_folders.remove(&id);
+                    self.save_session();
                     self.report_success("Folder deleted; its contents were moved up");
                 }
                 Ok(false) => {}
@@ -321,6 +322,7 @@ impl GoatpadApp {
                     let mut row_dragged = false;
                     let mut row_rect = None;
                     let mut drop_placement = None;
+                    let mut expand_for_create = false;
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         ui.add_space(depth as f32 * 18.0);
@@ -358,7 +360,7 @@ impl GoatpadApp {
                                     .clicked()
                                 {
                                     self.begin_folder_create(Some(id));
-                                    self.expanded_folders.insert(id);
+                                    expand_for_create = true;
                                 }
                                 ui.with_layout(
                                     egui::Layout::left_to_right(egui::Align::Center),
@@ -384,12 +386,17 @@ impl GoatpadApp {
                             },
                         );
                     });
+                    if expand_for_create {
+                        self.expanded_folders.insert(id);
+                        self.save_session();
+                    }
                     if row_clicked {
                         if expanded {
                             self.expanded_folders.remove(&id);
                         } else {
                             self.expanded_folders.insert(id);
                         }
+                        self.save_session();
                     }
                     if row_dragged {
                         self.dragged_workspace_item = Some(item);
@@ -594,6 +601,7 @@ impl GoatpadApp {
             match result {
                 Ok(id) => {
                     self.expanded_folders.insert(id);
+                    self.save_session();
                     self.report_success(if editor.id.is_some() {
                         "Folder renamed"
                     } else {

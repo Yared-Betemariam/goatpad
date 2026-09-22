@@ -184,6 +184,12 @@ impl GoatpadApp {
             .map(|document| document.id)
             .collect::<Vec<_>>();
         session.prepare_open_tabs(&note_ids);
+        let folder_ids = workspace
+            .folders
+            .iter()
+            .map(|folder| folder.id)
+            .collect::<Vec<_>>();
+        session.prepare_expanded_folders(&folder_ids);
         let state = if let Some(active_id) = session.active_tab {
             workspace.set_active_by_id(active_id);
             workspace.touch_document(active_id)?;
@@ -196,11 +202,7 @@ impl GoatpadApp {
             TabState::default()
         };
         session.save(&paths)?;
-        let expanded_folders = workspace
-            .folders
-            .iter()
-            .map(|folder| folder.id)
-            .collect::<HashSet<_>>();
+        let expanded_folders = session.expanded_folders.clone();
         let (writer, writer_results) = start_writer_thread();
         let app_icon_texture = resources::load_app_icon_texture(ctx);
         let mut app = Self {
