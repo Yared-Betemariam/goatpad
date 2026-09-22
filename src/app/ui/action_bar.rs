@@ -278,6 +278,8 @@ impl GoatpadApp {
                         }
                     });
 
+                    ui.add_space(36.0);
+
                     // Region 2: Markdown options (only rendered when active note is MD)
                     if active_is_markdown {
                         let available_width = ui.available_width();
@@ -506,6 +508,8 @@ impl GoatpadApp {
                             }
                         }
                     }
+
+                    ui.add_space(36.0);
 
                     // Region 3: MD/TXT Switcher (right-aligned)
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
