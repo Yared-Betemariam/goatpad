@@ -438,7 +438,7 @@ impl GoatpadApp {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         let document_indent =
-                            depth as f32 * 18.0 + if depth > 0 { 28.0 } else { 0.0 };
+                            depth as f32 * 18.0 + if depth > 0 { 6.0 } else { 0.0 };
                         ui.add_space(document_indent);
                         ui.allocate_ui_with_layout(
                             egui::vec2(ui.available_width(), 28.0),

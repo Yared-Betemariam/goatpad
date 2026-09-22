@@ -26,8 +26,8 @@ impl TabMetrics {
         // matching the original hand-tuned padding, while shrinking as
         // needed so larger fonts never overflow the fixed tab height.
         let available_margin = (TITLE_TAB_HEIGHT - content_height).max(3.0);
-        let top = (available_margin * (2.0 / 3.0)).clamp(2.0, 8.0);
-        let bottom = (available_margin - top).clamp(1.0, 8.0);
+        let top = (available_margin * (2.0 / 3.0)).clamp(2.0, 10.0);
+        let bottom = (available_margin - top).clamp(1.0, 10.0);
         let horizontal = (label_size * 0.9).clamp(8.0, 14.0);
         Self {
             label_size,
