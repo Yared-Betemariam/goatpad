@@ -157,13 +157,6 @@ impl GoatpadApp {
                 self.scroll_offset = output.state.offset.y;
                 let editor = output.inner;
                 let primary_cursor_after = editor.cursor_range.map(|range| range.primary.index.0);
-                let clicked_cursor = editor.response.interact_pointer_pos().map(|pos| {
-                    editor
-                        .galley
-                        .cursor_from_pos(pos - editor.galley_pos)
-                        .index
-                        .0
-                });
                 let alt_click = editor.response.clicked() && ctx.input(|input| input.modifiers.alt);
                 let history_event = ctx.input(|input| {
                     input.events.iter().any(|event| {
@@ -182,13 +175,12 @@ impl GoatpadApp {
                     self.cursor_offset = cursor_range.primary.index.0;
                 }
                 if alt_click {
-                    if let Some(clicked_offset) = clicked_cursor.or(primary_cursor_after) {
-                        self.multi_cursor_offsets
-                            .retain(|offset| *offset != clicked_offset);
-                        self.multi_cursor_offsets.push(clicked_offset);
-                        self.multi_cursor_offsets.sort_unstable();
-                        self.multi_cursor_offsets.dedup();
-                    }
+                    // The clicked position is now egui's primary caret. Keep
+                    // the caret that was active before the click as secondary.
+                    self.multi_cursor_offsets
+                        .push(before_cursor.primary.index.0);
+                    self.multi_cursor_offsets.sort_unstable();
+                    self.multi_cursor_offsets.dedup();
                 } else if editor.response.clicked() {
                     self.clear_multi_cursors();
                 } else if editor.response.changed() {
