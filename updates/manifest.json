@@ -1,6 +1,6 @@
 {
-  "version": "1.4.0",
-  "msi_url": "https://github.com/Yared-Betemariam/goatpad/releases/download/v1.4.0/Goatpad-1.4.0-x64.msi",
-  "sha256": "49801d1ece7df99ed56c13a58ab8bfb9232503a5d409a2fa244e7c19b7c5afa0",
-  "notes": "Multi caret editing, improved UI, folders support and much much more."
+  "version": "1.5.0",
+  "msi_url": "https://github.com/Yared-Betemariam/goatpad/releases/download/v1.5.0/Goatpad-1.5.0-x64.msi",
+  "sha256": "d02c8e6026a600f66d26f19fff9a4ff007013388ebb3cc792cb04054cf890330",
+  "notes": "Folders expanding peristance and simple UI changes"
 }
