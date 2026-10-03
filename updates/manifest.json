@@ -1,6 +1,6 @@
 {
-  "version": "1.5.0",
-  "msi_url": "https://github.com/Yared-Betemariam/goatpad/releases/download/v1.5.0/Goatpad-1.5.0-x64.msi",
-  "sha256": "d02c8e6026a600f66d26f19fff9a4ff007013388ebb3cc792cb04054cf890330",
-  "notes": "Folders expanding peristance and simple UI changes"
+  "version": "1.6.0",
+  "msi_url": "https://github.com/Yared-Betemariam/goatpad/releases/download/v1.6.0/Goatpad-1.6.0-x64.msi",
+  "sha256": "f6283e382e61a5e823dc87f56660de7a37d9c7516231059c0463e990b2bbcbc1",
+  "notes": "Customizable Markdown controls, improved editor spacing, and smoother cross-monitor window dragging."
 }
