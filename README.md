@@ -24,6 +24,7 @@ Goatpad is a lightweight desktop editor for Markdown and plain-text notes. It is
 - Clean, padded status toasts with distinct success and error styling
 - Automatic background saving
 - Workspace and window restoration between launches, including DPI-safe native window size and position, the last normal bounds, and maximized state
+- Smooth Windows window dragging between monitors with different display scaling
 - Tabbed Settings window with full theme CRUD (create, duplicate, edit, delete), theme-aware editor text, and separate System and Content font selections
 - Configurable keyboard shortcuts
 - Local storage with no account or cloud service required

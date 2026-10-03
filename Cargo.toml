@@ -29,3 +29,6 @@ windows = { version = "0.62.2", features = [
 [build-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
 winres = "0.1.12"
+
+[patch.crates-io]
+winit = { path = "vendor/winit" }
