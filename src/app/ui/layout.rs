@@ -14,8 +14,8 @@ pub(super) const COMPACT_ACTION_BAR_WIDTH: f32 = 480.0;
 pub(super) const FIND_BAR_HEIGHT: f32 = 38.0;
 pub(super) const STATUS_BAR_HEIGHT: f32 = 38.0;
 
-pub(super) const DOCUMENT_VIEW_VERTICAL_PADDING: i8 = 21;
-pub(super) const DOCUMENT_VIEW_HORIZONTAL_PADDING: i8 = 12;
+pub(super) const DOCUMENT_VIEW_VERTICAL_PADDING: i8 = 32;
+pub(super) const DOCUMENT_VIEW_HORIZONTAL_PADDING: i8 = 22;
 
 pub(super) const RESIZE_BORDER_WIDTH: f32 = 5.0;
 pub(super) const RESIZE_CORNER_SIZE: f32 = 14.0;
