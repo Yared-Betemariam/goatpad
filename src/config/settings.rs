@@ -31,6 +31,8 @@ pub struct Settings {
     pub spellcheck_enabled: bool,
     #[serde(default = "default_markdown_preview_highlighting_enabled")]
     pub markdown_preview_highlighting_enabled: bool,
+    #[serde(default = "default_show_markdown_format_options")]
+    pub show_markdown_format_options: bool,
 }
 
 fn default_auto_check_updates() -> bool {
@@ -51,6 +53,10 @@ fn default_spellcheck_enabled() -> bool {
 
 fn default_markdown_preview_highlighting_enabled() -> bool {
     true
+}
+
+fn default_show_markdown_format_options() -> bool {
+    false
 }
 
 fn normalized_content_zoom(zoom: f32) -> f32 {
@@ -102,6 +108,7 @@ impl Default for Settings {
             app_zoom: default_app_zoom(),
             spellcheck_enabled: default_spellcheck_enabled(),
             markdown_preview_highlighting_enabled: default_markdown_preview_highlighting_enabled(),
+            show_markdown_format_options: default_show_markdown_format_options(),
         }
     }
 }
@@ -183,10 +190,12 @@ mod tests {
         assert_eq!(settings.content_zoom, 3.0);
         assert_eq!(settings.app_zoom, 1.25);
         assert!(settings.markdown_preview_highlighting_enabled);
+        assert!(!settings.show_markdown_format_options);
 
         let saved = fs::read_to_string(paths.settings_path()).unwrap();
         assert!(saved.contains("\"content_zoom\": 3.0"));
         assert!(saved.contains("\"markdown_preview_highlighting_enabled\": true"));
+        assert!(saved.contains("\"show_markdown_format_options\": false"));
         fs::remove_dir_all(directory).unwrap();
     }
 

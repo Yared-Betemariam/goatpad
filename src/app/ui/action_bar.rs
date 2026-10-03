@@ -248,6 +248,16 @@ impl GoatpadApp {
                                 ui.close();
                             }
                         }
+                        let format_options_response = ui.selectable_label(
+                            self.settings.show_markdown_format_options,
+                            "Show Markdown format options",
+                        );
+                        if format_options_response.clicked() {
+                            self.settings.show_markdown_format_options =
+                                !self.settings.show_markdown_format_options;
+                            self.save_settings();
+                            ui.close();
+                        }
                         ui.separator();
                         ui.menu_button("Theme", |ui| {
                             for theme in self.themes.clone() {
@@ -278,12 +288,14 @@ impl GoatpadApp {
                         }
                     });
 
-                    ui.add_space(36.0);
+                    // Removed Space
+                    // ui.add_space(36.0);
 
                     // Region 2: Markdown options (only rendered when active note is MD)
                     if active_is_markdown {
-                        let available_width = ui.available_width();
-                        if available_width < COMPACT_ACTION_BAR_WIDTH {
+                        let show_format_menu = !self.settings.show_markdown_format_options
+                            || ui.available_width() < COMPACT_ACTION_BAR_WIDTH;
+                        if show_format_menu {
                             ui.menu_button("Format", |ui| {
                                 ui.menu_button(
                                     format!("{} Headings", egui_phosphor::regular::TEXT_H),

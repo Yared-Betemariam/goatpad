@@ -151,7 +151,7 @@ Hold `Alt` and click in the editor to add carets for multiline editing. Text ins
 Goatpad unifies the application menus and formatting tools into a single, height-constant action bar:
 
 - **Actions**: Tabs List, followed by the File, Edit, and View menus on the left.
-- **Markdown options**: A heading dropdown (H1–H3), list dropdown (bulleted/numbered), bold, italic, strikethrough, link, table, and clear-formatting controls in the center. These tools are rendered only when the active note is Markdown (`MD`); for plain-text notes (`TXT`), the region collapses without changing the bar's height. On constrained window widths, tools collapse cleanly into a "Format" overflow menu.
+- **Markdown options**: A heading dropdown (H1–H3), list dropdown (bulleted/numbered), bold, italic, strikethrough, link, table, and clear-formatting controls in the center. These tools are rendered only when the active note is Markdown (`MD`); for plain-text notes (`TXT`), the region collapses without changing the bar's height. By default, the controls are grouped in a "Format" menu; enable `View` → `Show Markdown format options` to show the individual controls when there is enough room. They automatically collapse back into the menu on constrained window widths.
 - **Document switcher**: An immediate `MD`/`TXT` switch at the right edge of the bar (also switchable via the `View` menu or `Ctrl+M`). Markdown notes additionally show a preview icon beside this switcher. Activating it renders the note across the full content view and locks text editing; toggle it with `Ctrl+O`. The `View` menu also includes a persisted `Color highlighting in Markdown preview` toggle, enabled by default.
 
 ## Settings & Themes
